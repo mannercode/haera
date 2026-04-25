@@ -1,0 +1,9 @@
+services:
+    mongo:
+        image: mongo:8.2.3
+        container_name: mongo
+        ports: ['27017:27017']
+        environment:
+            MONGO_INITDB_ROOT_USERNAME: mongouser
+            MONGO_INITDB_ROOT_PASSWORD: mongopass
+        restart: unless-stopped
