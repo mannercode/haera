@@ -26,6 +26,10 @@ export async function POST(req: NextRequest) {
   const doc: RawInput = {
     content,
     source: typeof body?.source === 'string' ? body.source : undefined,
+    instructions:
+      typeof body?.instructions === 'string' && body.instructions.trim()
+        ? body.instructions.trim()
+        : undefined,
     createdAt: new Date(),
     status: 'pending',
   };

@@ -28,6 +28,7 @@ export interface RawInput {
   _id?: string;
   content: string;
   source?: string;
+  instructions?: string;
   createdAt: Date;
   status: RawStatus;
   processedAt?: Date;
@@ -45,4 +46,28 @@ export interface Task {
   priority?: 'low' | 'normal' | 'high';
   status: TaskStatus;
   createdAt: Date;
+}
+
+export interface Note {
+  _id?: string;
+  title: string;
+  content: string;
+  tags?: string[];
+  sourceRawId?: string;
+  createdAt: Date;
+}
+
+export interface Attachment {
+  _id?: string;
+  filename: string;       // original filename (sanitized for display)
+  storagePath: string;    // absolute path on disk inside the container
+  size: number;
+  mimeType?: string;
+  createdAt: Date;
+}
+
+export interface BookmarkClick {
+  _id: string;            // the URL itself
+  count: number;
+  lastAt: Date;
 }

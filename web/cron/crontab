@@ -1,4 +1,4 @@
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-*/5 * * * * root /opt/haera/organize.sh >> /var/log/haera.log 2>&1
+* * * * * root /opt/haera/organize.sh >> /var/log/haera.log 2>&1

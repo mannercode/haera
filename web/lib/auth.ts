@@ -2,7 +2,7 @@ import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process';
 import { writeFile, stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
-export const TOKEN_FILE = '/data/claude_token';
+export const TOKEN_FILE = '/var/haera/auth/claude_token';
 const SESSION_TTL_MS = 5 * 60 * 1000;
 const URL_TIMEOUT_MS = 30_000;
 const TOKEN_TIMEOUT_MS = 60_000;

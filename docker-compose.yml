@@ -11,14 +11,9 @@ services:
       # Optional: pre-set a token to skip the web login flow.
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
     volumes:
-      - haera-data:/data           # persistent token written by web login
-      - claude-config:/root/.claude # claude CLI state (settings, backups)
+      - ./var:/var/haera   # single bind mount: auth, uploads, all persistent state
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
-
-volumes:
-  haera-data:
-  claude-config:

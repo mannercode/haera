@@ -52,8 +52,11 @@ function fmtFullDate(d: Date): string {
 function buildMonthGrid(year: number, month: number): Date[] {
   const firstOfMonth = new Date(year, month, 1);
   const startOffset = firstOfMonth.getDay();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const rows = Math.ceil((startOffset + daysInMonth) / 7);
+  const cellCount = rows * 7;
   const gridStart = new Date(year, month, 1 - startOffset);
-  return Array.from({ length: 42 }, (_, i) => {
+  return Array.from({ length: cellCount }, (_, i) => {
     const d = new Date(gridStart);
     d.setDate(gridStart.getDate() + i);
     return d;
@@ -65,8 +68,30 @@ function cls(...parts: (string | false | null | undefined)[]): string {
 }
 
 export default function Home() {
-  const [content, setContent] = useState('');
+  const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [elapsed, setElapsed] = useState(0);
+  const [streamText, setStreamText] = useState('');
+  const [streamThinking, setStreamThinking] = useState('');
+  const [streamTools, setStreamTools] = useState<{ name: string; input: string }[]>([]);
+  const [showThinking, setShowThinking] = useState(false);
+  const [submitError, setSubmitError] = useState('');
+  const [attachments, setAttachments] = useState<{ _id: string; filename: string; size: number; mimeType?: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [dragDepth, setDragDepth] = useState(0);
+  const isDragging = dragDepth > 0;
+
+  useEffect(() => {
+    if (!submitting) {
+      setElapsed(0);
+      return;
+    }
+    const start = Date.now();
+    setElapsed(0);
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 500);
+    return () => clearInterval(id);
+  }, [submitting]);
   const [raws, setRaws] = useState<RawInput[]>([]);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [authed, setAuthed] = useState<boolean | null>(null);
@@ -92,6 +117,124 @@ export default function Home() {
     setRaws(r);
     setAllTasks(t);
     setAuthed(!!a.authenticated);
+  }
+
+  useEffect(() => {
+    refresh();
+    const id = setInterval(refresh, 10000);
+    return () => clearInterval(id);
+  }, []);
+
+  async function uploadFiles(files: FileList | File[]) {
+    const arr = Array.from(files);
+    if (arr.length === 0) return;
+    setUploading(true);
+    setUploadError('');
+    try {
+      const fd = new FormData();
+      for (const f of arr) fd.append('files', f);
+      const r = await fetch('/api/upload', { method: 'POST', body: fd });
+      const data = await r.json();
+      if (!r.ok || data.error) throw new Error(data.error || `status ${r.status}`);
+      setAttachments((cur) => [...cur, ...data.attachments]);
+    } catch (e) {
+      setUploadError((e as Error).message ?? String(e));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function removeAttachment(id: string) {
+    setAttachments((cur) => cur.filter((a) => a._id !== id));
+    fetch(`/api/upload/${id}`, { method: 'DELETE' }).catch(() => {});
+  }
+
+  async function submit() {
+    if ((!text.trim() && attachments.length === 0) || submitting) return;
+    setSubmitting(true);
+    setSubmitError('');
+    setStreamText('');
+    setStreamThinking('');
+    setStreamTools([]);
+    const sentText = text;
+    const sentAttachments = attachments;
+    setText('');
+    setAttachments([]);
+
+    let res: Response;
+    try {
+      res = await fetch('/api/process', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          text: sentText,
+          attachmentIds: sentAttachments.map((a) => a._id),
+        }),
+      });
+    } catch (e) {
+      console.error('[haera submit] fetch failed', e);
+      setSubmitError('서버에 연결하지 못했습니다. 네트워크를 확인해주세요.');
+      setSubmitting(false);
+      return;
+    }
+
+    if (!res.ok || !res.body) {
+      let detail = '';
+      try {
+        detail = (await res.text()).slice(0, 200);
+      } catch {
+        /* ignore */
+      }
+      console.error('[haera submit] bad response', res.status, detail);
+      const msg =
+        res.status === 401
+          ? 'Claude 인증이 필요합니다. 우측 상단 로그인을 진행해주세요.'
+          : `서버 응답 오류 (${res.status})${detail ? `: ${detail}` : ''}`;
+      setSubmitError(msg);
+      setSubmitting(false);
+      return;
+    }
+
+    try {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      // eslint-disable-next-line no-constant-condition
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const chunks = buf.split('\n\n');
+        buf = chunks.pop() || '';
+        for (const chunk of chunks) {
+          if (!chunk.startsWith('data: ')) continue;
+          const payload = chunk.slice(6);
+          let evt: { type: string; text?: string; name?: string; input?: string; message?: string };
+          try {
+            evt = JSON.parse(payload);
+          } catch (parseErr) {
+            console.warn('[haera submit] SSE chunk parse failed:', payload.slice(0, 200), parseErr);
+            continue;
+          }
+          if (evt.type === 'text' && evt.text) {
+            setStreamText((s) => s + evt.text);
+          } else if (evt.type === 'thinking' && evt.text) {
+            setStreamThinking((s) => s + evt.text);
+          } else if (evt.type === 'tool' && evt.name) {
+            setStreamTools((arr) => [...arr, { name: evt.name!, input: evt.input ?? '' }]);
+          } else if (evt.type === 'error') {
+            throw new Error(evt.message || '알 수 없는 처리 오류');
+          }
+        }
+      }
+      refresh();
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[haera submit] stream error', e);
+      setSubmitError(`처리 중 오류: ${msg}`);
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function startLogin() {
@@ -132,28 +275,6 @@ export default function Home() {
     }
   }
 
-  useEffect(() => {
-    refresh();
-    const id = setInterval(refresh, 10000);
-    return () => clearInterval(id);
-  }, []);
-
-  async function submit() {
-    if (!content.trim()) return;
-    setSubmitting(true);
-    try {
-      await fetch('/api/raw', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ content }),
-      });
-      setContent('');
-      refresh();
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   async function toggleTask(t: Task) {
     await fetch(`/api/tasks/${t._id}`, {
       method: 'PATCH',
@@ -189,7 +310,7 @@ export default function Home() {
   }, [allTasks]);
 
   const noDeadline = useMemo(
-    () => allTasks.filter((t) => !t.deadline),
+    () => allTasks.filter((t) => !t.deadline && t.status === 'todo'),
     [allTasks],
   );
 
@@ -201,11 +322,6 @@ export default function Home() {
     return new Date(y, m - 1, d);
   }, [popoverKey]);
   const popoverTasks = popoverKey ? tasksByDay.get(popoverKey) ?? [] : [];
-
-  function handleCellClick(k: string) {
-    setSelectedKey(k);
-    setPopoverKey((prev) => (prev === k ? null : k));
-  }
 
   const pending = raws.filter((r) => r.status === 'pending');
   const failed = raws.filter((r) => r.status === 'failed');
@@ -219,29 +335,31 @@ export default function Home() {
     setSelectedKey(dateKey(t));
   }
 
-  return (
-    <main className="mx-auto max-w-6xl px-4 py-8 space-y-8">
-      <header className="flex items-end justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-zinc-900">haera</h1>
-          <p className="text-sm text-zinc-500">받은 업무를 그대로 붙여넣으면 정리됩니다.</p>
-        </div>
-        <span
-          className={cls(
-            'text-xs',
-            authed === null && 'text-zinc-400',
-            authed === true && 'text-emerald-600',
-            authed === false && 'text-amber-600',
-          )}
-        >
-          {authed === null ? '...' : authed ? '● Claude 인증됨' : '● Claude 인증 필요'}
-        </span>
-      </header>
+  function handleCellClick(k: string) {
+    setSelectedKey(k);
+    setPopoverKey((prev) => (prev === k ? null : k));
+  }
 
+  // Close popover when clicking outside (anything that isn't a calendar cell or the popover itself).
+  useEffect(() => {
+    if (!popoverKey) return;
+    const onMouseDown = (e: MouseEvent) => {
+      const t = e.target as Element | null;
+      if (!t) return;
+      if (t.closest('[data-haera-popover]')) return;
+      if (t.closest('[data-haera-cell]')) return;
+      setPopoverKey(null);
+    };
+    document.addEventListener('mousedown', onMouseDown);
+    return () => document.removeEventListener('mousedown', onMouseDown);
+  }, [popoverKey]);
+
+  return (
+    <main className="mx-auto max-w-6xl px-4 py-6 space-y-6">
       {authed === false && (
         <section className="space-y-3 rounded border border-amber-300 bg-amber-50 p-4 text-sm">
           <div className="font-medium text-amber-800">
-            정리 작업이 멈춰 있습니다. Claude에 로그인해주세요.
+            Claude 로그인이 필요합니다.
           </div>
           {loginStep === 'idle' && (
             <button
@@ -306,26 +424,152 @@ export default function Home() {
         </section>
       )}
 
-      <section className="space-y-2">
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="메일/메신저 내용 그대로 붙여넣기..."
-          rows={5}
-          className="w-full rounded border border-zinc-300 bg-white px-3 py-2 font-mono text-sm"
-        />
-        <div className="flex gap-2">
+      <section
+        className={cls(
+          'relative space-y-2 rounded border-2 border-dashed p-2 transition',
+          isDragging
+            ? 'border-blue-500 bg-blue-50/70'
+            : 'border-transparent',
+        )}
+        onDragEnter={(e) => {
+          if (e.dataTransfer?.types?.includes('Files')) {
+            e.preventDefault();
+            setDragDepth((d) => d + 1);
+          }
+        }}
+        onDragOver={(e) => {
+          if (e.dataTransfer?.types?.includes('Files')) e.preventDefault();
+        }}
+        onDragLeave={(e) => {
+          if (e.dataTransfer?.types?.includes('Files')) {
+            e.preventDefault();
+            setDragDepth((d) => Math.max(0, d - 1));
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragDepth(0);
+          if (e.dataTransfer?.files?.length) uploadFiles(e.dataTransfer.files);
+        }}
+      >
+        {isDragging && (
+          <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded bg-blue-50/90 text-base font-medium text-blue-700">
+            📎 여기 놓으면 첨부됩니다
+          </div>
+        )}
+        <div className="flex items-stretch gap-2">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                submit();
+              }
+            }}
+            placeholder="내용 붙여넣기 / 질문 / 명령 / 파일 드래그 — Enter 전송, Shift+Enter 줄바꿈"
+            rows={4}
+            className="flex-1 resize-y rounded border border-zinc-300 bg-white px-3 py-2 font-mono text-sm"
+          />
           <button
-            disabled={submitting || !content.trim()}
+            disabled={submitting || (!text.trim() && attachments.length === 0) || authed === false}
             onClick={submit}
-            className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded bg-blue-600 px-4 text-sm font-medium text-white disabled:opacity-50"
           >
-            {submitting ? '저장 중...' : '저장'}
+            {submitting ? '처리 중...' : '보내기'}
           </button>
-          <span className="self-center text-xs text-zinc-500">
-            5분 내에 정리됩니다. {pending.length > 0 && `정리 대기: ${pending.length}건`}
-          </span>
         </div>
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <label className="cursor-pointer rounded border border-zinc-300 bg-white px-2 py-1 text-zinc-700 hover:bg-zinc-100">
+            📎 파일 첨부
+            <input
+              type="file"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files) uploadFiles(e.target.files);
+                e.target.value = '';
+              }}
+            />
+          </label>
+          {uploading && <span className="text-zinc-500">업로드 중...</span>}
+          {uploadError && <span className="text-red-700">업로드 실패: {uploadError}</span>}
+          {attachments.map((a) => (
+            <span
+              key={a._id}
+              className="inline-flex items-center gap-1 rounded bg-blue-50 px-2 py-1 text-blue-800"
+            >
+              📎 {a.filename}
+              <span className="text-blue-500">({Math.round(a.size / 1024)}KB)</span>
+              <button
+                onClick={() => removeAttachment(a._id)}
+                className="text-blue-500 hover:text-red-600"
+                aria-label="첨부 삭제"
+              >
+                ✕
+              </button>
+            </span>
+          ))}
+        </div>
+        {pending.length > 0 && (
+          <div className="text-xs text-zinc-500">정리 대기: {pending.length}건</div>
+        )}
+        {submitError && (
+          <pre className="whitespace-pre-wrap break-words rounded border border-red-300 bg-red-50 p-2 text-xs text-red-700">
+            {submitError}
+          </pre>
+        )}
+        {(submitting || streamText || streamTools.length > 0 || streamThinking) && (
+          <div className="space-y-2 rounded border border-zinc-200 bg-zinc-50 p-3 text-sm">
+            {submitting && (
+              <div className="flex items-center gap-2 text-xs text-zinc-500">
+                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-zinc-300 border-t-blue-600" />
+                <span>{streamText ? '응답 중' : streamThinking ? '깊이 생각 중' : '연결 중'}... ({elapsed}초)</span>
+              </div>
+            )}
+            {streamTools.length > 0 && (
+              <ul className="space-y-1 text-[11px] text-zinc-500">
+                {streamTools.map((t, i) => (
+                  <li key={i} className="truncate">
+                    🔧 <span className="font-medium">{t.name}</span>{' '}
+                    <span className="text-zinc-400">{t.input}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {streamThinking && (
+              <details
+                open={showThinking}
+                onToggle={(e) => setShowThinking((e.target as HTMLDetailsElement).open)}
+                className="text-xs text-zinc-500"
+              >
+                <summary className="cursor-pointer hover:text-zinc-800">
+                  생각 ({streamThinking.length}자)
+                </summary>
+                <pre className="mt-1 whitespace-pre-wrap break-words font-sans text-zinc-500">
+                  {streamThinking}
+                </pre>
+              </details>
+            )}
+            {streamText && (
+              <pre className="whitespace-pre-wrap break-words font-sans text-zinc-800">
+                {streamText}
+              </pre>
+            )}
+            {!submitting && (streamText || streamTools.length > 0) && (
+              <button
+                onClick={() => {
+                  setStreamText('');
+                  setStreamThinking('');
+                  setStreamTools([]);
+                }}
+                className="text-xs text-zinc-500 hover:text-zinc-800"
+              >
+                지우기
+              </button>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="space-y-3">
@@ -376,11 +620,12 @@ export default function Home() {
             return (
               <button
                 key={i}
+                data-haera-cell
                 onClick={() => handleCellClick(k)}
                 className={cls(
                   'flex min-h-[100px] flex-col items-stretch border-b border-r border-zinc-200 p-1 text-left transition hover:bg-zinc-50',
                   i % 7 === 6 && 'border-r-0',
-                  i >= 35 && 'border-b-0',
+                  i >= grid.length - 7 && 'border-b-0',
                   isOtherMonth && 'bg-zinc-50 text-zinc-400',
                   isSelected && 'bg-blue-50',
                   isToday && 'ring-1 ring-inset ring-blue-500',
@@ -426,12 +671,10 @@ export default function Home() {
           })}
 
           {popoverKey && popoverDate && (
-            <>
-              <div
-                className="fixed inset-0 z-30"
-                onClick={() => setPopoverKey(null)}
-              />
-              <div className="absolute left-1/2 top-1/2 z-40 w-80 max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-md border border-zinc-300 bg-white shadow-xl">
+            <div
+              data-haera-popover
+              className="absolute left-1/2 top-1/2 z-40 w-80 max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-md border border-zinc-300 bg-white shadow-xl"
+            >
                 <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
                   <h3 className="text-sm font-semibold">
                     {fmtFullDate(popoverDate)}
@@ -518,9 +761,8 @@ export default function Home() {
                       })}
                     </ul>
                   )}
-                </div>
               </div>
-            </>
+            </div>
           )}
         </div>
       </section>
@@ -541,36 +783,29 @@ export default function Home() {
                   className="flex gap-2 rounded border border-zinc-200 bg-white p-2"
                 >
                   <input
-                      type="checkbox"
-                      checked={t.status === 'done'}
-                      onChange={() => toggleTask(t)}
-                      className="mt-1"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <span
-                        className={cls(
-                          'text-sm font-medium',
-                          t.status === 'done' && 'text-zinc-400 line-through',
-                        )}
-                      >
-                        {t.title}
-                      </span>
-                      {t.description && (
-                        <p className="mt-1 text-xs text-zinc-600">{t.description}</p>
-                      )}
-                    </div>
-                    <button
-                      onClick={() => deleteTask(t._id)}
-                      className="self-start text-xs text-zinc-400 hover:text-red-600"
-                    >
-                      ✕
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        )}
+                    type="checkbox"
+                    checked={t.status === 'done'}
+                    onChange={() => toggleTask(t)}
+                    className="mt-1"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm font-medium">{t.title}</span>
+                    {t.description && (
+                      <p className="mt-1 text-xs text-zinc-600">{t.description}</p>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => deleteTask(t._id)}
+                    className="self-start text-xs text-zinc-400 hover:text-red-600"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {pending.length > 0 && (
         <section className="space-y-2">
