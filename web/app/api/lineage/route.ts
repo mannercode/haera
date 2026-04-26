@@ -22,6 +22,7 @@ type FamilyMember =
       type: 'note';
       _id: string;
       title: string;
+      content: string;
       tags?: string[];
       isSelf?: boolean;
     };
@@ -97,6 +98,7 @@ export async function GET(req: NextRequest) {
         type: 'note',
         _id: String(n._id),
         title: n.title,
+        content: n.content,
         tags: n.tags,
         isSelf: type === 'note' && String(n._id) === String(id),
       });

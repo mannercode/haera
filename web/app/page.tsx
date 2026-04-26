@@ -106,7 +106,8 @@ export default function Home() {
     return new Date(t.getFullYear(), t.getMonth(), 1);
   });
   const [selectedKey, setSelectedKey] = useState<string>(() => dateKey(new Date()));
-  const [popoverKey, setPopoverKey] = useState<string | null>(null);
+  const [popoverStack, setPopoverStack] = useState<string[]>([]);
+  const popoverKey = popoverStack[popoverStack.length - 1] ?? null;
   const [showNoDeadline, setShowNoDeadline] = useState(false);
   const [openLineage, setOpenLineage] = useState<string | null>(null);
 
@@ -339,22 +340,34 @@ export default function Home() {
 
   function handleCellClick(k: string) {
     setSelectedKey(k);
-    setPopoverKey((prev) => (prev === k ? null : k));
+    setPopoverStack((prev) => {
+      // Same-cell on a single popover → close. Otherwise reset stack to that cell.
+      if (prev.length === 1 && prev[0] === k) return [];
+      return [k];
+    });
   }
 
-  // Close popover when clicking outside (anything that isn't a calendar cell or the popover itself).
+  function popPopover() {
+    setPopoverStack((prev) => prev.slice(0, -1));
+  }
+
+  function pushPopover(k: string) {
+    setPopoverStack((prev) => [...prev, k]);
+  }
+
+  // Close all popovers when clicking outside (anything that isn't a calendar cell or any popover).
   useEffect(() => {
-    if (!popoverKey) return;
+    if (popoverStack.length === 0) return;
     const onMouseDown = (e: MouseEvent) => {
       const t = e.target as Element | null;
       if (!t) return;
       if (t.closest('[data-haera-popover]')) return;
       if (t.closest('[data-haera-cell]')) return;
-      setPopoverKey(null);
+      setPopoverStack([]);
     };
     document.addEventListener('mousedown', onMouseDown);
     return () => document.removeEventListener('mousedown', onMouseDown);
-  }, [popoverKey]);
+  }, [popoverStack.length]);
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 space-y-6">
@@ -672,20 +685,44 @@ export default function Home() {
             );
           })}
 
-          {popoverKey && popoverDate && (
-            <div
-              data-haera-popover
-              className="absolute left-1/2 top-1/2 z-40 w-80 max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-md border border-zinc-300 bg-white shadow-xl"
-            >
+          {popoverStack.map((stackKey, stackIdx) => {
+            const depth = popoverStack.length - 1 - stackIdx;
+            const isTop = depth === 0;
+            const [py, pm, pd] = stackKey.split('-').map(Number);
+            const stackDate = new Date(py, pm - 1, pd);
+            const stackTasks = tasksByDay.get(stackKey) ?? [];
+            const offset = depth * 14;
+            return (
+              <div
+                key={`${stackKey}-${stackIdx}`}
+                data-haera-popover
+                onMouseDown={(e) => {
+                  if (!isTop) {
+                    e.stopPropagation();
+                    // Bring this layer to top by popping everything above it.
+                    setPopoverStack((prev) => prev.slice(0, stackIdx + 1));
+                  }
+                }}
+                className={cls(
+                  'absolute left-1/2 top-1/2 w-80 max-w-[calc(100%-2rem)] rounded-md border border-zinc-300 bg-white shadow-xl transition',
+                  !isTop && 'cursor-pointer',
+                )}
+                style={{
+                  transform: `translate(calc(-50% - ${offset}px), calc(-50% - ${offset}px))`,
+                  zIndex: 40 + stackIdx,
+                  opacity: isTop ? 1 : Math.max(0.4, 0.85 - depth * 0.18),
+                }}
+              >
+              <div className={cls(!isTop && 'pointer-events-none')}>
                 <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2">
                   <h3 className="text-sm font-semibold">
-                    {fmtFullDate(popoverDate)}
+                    {fmtFullDate(stackDate)}
                     <span className="ml-2 text-xs font-normal text-zinc-500">
-                      {popoverTasks.length}건
+                      {stackTasks.length}건
                     </span>
                   </h3>
                   <button
-                    onClick={() => setPopoverKey(null)}
+                    onClick={popPopover}
                     className="text-zinc-400 hover:text-zinc-700"
                     aria-label="닫기"
                   >
@@ -693,11 +730,11 @@ export default function Home() {
                   </button>
                 </div>
                 <div className="max-h-96 overflow-y-auto p-3">
-                  {popoverTasks.length === 0 ? (
+                  {stackTasks.length === 0 ? (
                     <p className="text-sm text-zinc-400">할 일 없음</p>
                   ) : (
                     <ul className="space-y-2">
-                      {popoverTasks.map((t) => {
+                      {stackTasks.map((t) => {
                         const overdue =
                           t.status === 'todo' &&
                           t.deadline &&
@@ -722,14 +759,19 @@ export default function Home() {
                             />
                             <div className="min-w-0 flex-1">
                               <div className="flex flex-wrap items-baseline gap-x-2">
-                                <span
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setOpenLineage((prev) => (prev === t._id ? null : t._id));
+                                  }}
                                   className={cls(
-                                    'text-sm font-medium',
+                                    'text-left text-sm font-medium hover:text-blue-700',
                                     t.status === 'done' && 'text-zinc-400 line-through',
                                   )}
+                                  title="클릭하면 출처 보기"
                                 >
                                   {t.title}
-                                </span>
+                                </button>
                                 {t.deadline && (
                                   <span className="text-xs text-zinc-500">
                                     {fmtDateTime(t.deadline)}
@@ -751,17 +793,30 @@ export default function Home() {
                                   {t.description}
                                 </p>
                               )}
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOpenLineage((prev) => (prev === t._id ? null : t._id));
-                                }}
-                                className="mt-1 text-[10px] text-zinc-500 hover:text-blue-700"
-                              >
-                                {openLineage === t._id ? '▼ 출처 닫기' : '▶ 출처 보기'}
-                              </button>
                               {openLineage === t._id && (
-                                <LineagePanel type="task" id={t._id} />
+                                <LineagePanel
+                                  type="task"
+                                  id={t._id}
+                                  onSelectSibling={(f) => {
+                                    if (f.type === 'task' && f.deadline) {
+                                      const d = new Date(f.deadline);
+                                      const k = dateKey(d);
+                                      setViewMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+                                      setSelectedKey(k);
+                                      pushPopover(k);
+                                      setOpenLineage(f._id);
+                                      return true;
+                                    }
+                                    if (f.type === 'task' && !f.deadline) {
+                                      setOpenLineage(f._id);
+                                      setShowNoDeadline(true);
+                                      setPopoverStack([]);
+                                      return true;
+                                    }
+                                    // notes have no calendar position; let panel expand inline
+                                    return false;
+                                  }}
+                                />
                               )}
                             </div>
                             <button
@@ -775,9 +830,11 @@ export default function Home() {
                       })}
                     </ul>
                   )}
+                </div>
               </div>
             </div>
-          )}
+            );
+          })}
         </div>
       </section>
 
