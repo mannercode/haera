@@ -42,7 +42,8 @@ export interface Task {
   title: string;
   deadline?: Date | null;
   description?: string;
-  sourceRawId?: string;
+  sourceRawId?: string;        // legacy single source (still read for backward compat)
+  sourceRawIds?: string[];     // multiple sources — preferred
   priority?: 'low' | 'normal' | 'high';
   status: TaskStatus;
   createdAt: Date;
@@ -53,8 +54,18 @@ export interface Note {
   title: string;
   content: string;
   tags?: string[];
-  sourceRawId?: string;
+  sourceRawId?: string;        // legacy single source
+  sourceRawIds?: string[];     // multiple sources
   createdAt: Date;
+}
+
+export function getSourceRawIds(doc: { sourceRawId?: string; sourceRawIds?: string[] }): string[] {
+  const set = new Set<string>();
+  if (doc.sourceRawIds) {
+    for (const id of doc.sourceRawIds) if (id) set.add(id);
+  }
+  if (doc.sourceRawId) set.add(doc.sourceRawId);
+  return Array.from(set);
 }
 
 export interface Attachment {

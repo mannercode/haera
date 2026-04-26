@@ -11,6 +11,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   const body = await req.json();
   const update: Partial<Note> = {};
+  const ops: Record<string, unknown> = {};
   if (typeof body?.title === 'string') update.title = body.title.trim();
   if (typeof body?.content === 'string') update.content = body.content.trim();
   if (Array.isArray(body?.tags)) {
@@ -18,10 +19,27 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       .filter((t: unknown) => typeof t === 'string' && t.trim())
       .map((t: string) => t.trim());
   }
+  if (Array.isArray(body?.addSourceRawIds) && body.addSourceRawIds.length > 0) {
+    const ids = (body.addSourceRawIds as unknown[]).filter(
+      (x): x is string => typeof x === 'string' && x.length > 0,
+    );
+    if (ids.length > 0) {
+      ops.$addToSet = { sourceRawIds: { $each: ids } };
+    }
+  }
+  if (Array.isArray(body?.sourceRawIds)) {
+    update.sourceRawIds = (body.sourceRawIds as unknown[]).filter(
+      (x): x is string => typeof x === 'string',
+    );
+  }
+  if (Object.keys(update).length > 0) ops.$set = update;
   const db = await getDb();
+  if (Object.keys(ops).length === 0) {
+    return NextResponse.json({ matched: 0, modified: 0 });
+  }
   const result = await db
     .collection<Note>('notes')
-    .updateOne({ _id: new ObjectId(id) as unknown as string }, { $set: update });
+    .updateOne({ _id: new ObjectId(id) as unknown as string }, ops);
   return NextResponse.json({ matched: result.matchedCount, modified: result.modifiedCount });
 }
 

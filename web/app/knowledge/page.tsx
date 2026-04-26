@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { LineagePanel } from '../lineage-panel';
 
 type Item = {
   type: 'note' | 'raw' | 'task' | 'attachment';
@@ -387,6 +388,12 @@ function KnowledgeInner() {
                         #{tag}
                       </button>
                     ))}
+                  </div>
+                )}
+
+                {isOpen && (item.type === 'task' || item.type === 'note') && (
+                  <div onClick={(e) => e.stopPropagation()}>
+                    <LineagePanel type={item.type} id={item._id} />
                   </div>
                 )}
               </li>

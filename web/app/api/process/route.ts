@@ -95,6 +95,11 @@ API 베이스: http://localhost:3000
 
 마감 상대표현(오늘/내일/하루 미뤄/이번주 금요일)은 현재 시각 기준 환산.
 
+## 출처 추적 (중요)
+- 새 task/note를 만들 때는 반드시 \`sourceRawIds: ["raw_id"]\` 채워라. raw_id는 GET /api/raw?status=pending 응답의 _id다.
+- 새 입력이 **기존 task의 정의를 보완·구체화**하는 경우(같은 작업의 후속 정보, 마감 변경 근거 등): 새 task 만들지 말고 **PATCH /api/tasks/<id> body \`{addSourceRawIds:["새raw_id"], ...변경필드}\`** 로 출처를 누적하고 필드를 갱신해라. 한 task는 여러 raw에서 누적된 정의를 가질 수 있다.
+- 노트도 동일하게 \`addSourceRawIds\`로 출처 누적 가능.
+
 ## 컨텍스트
 [참고정보 ${notes.length}건]
 ${notesBlock}

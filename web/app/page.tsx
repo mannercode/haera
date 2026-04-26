@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { LineagePanel } from './lineage-panel';
 
 type RawInput = {
   _id: string;
@@ -107,6 +108,7 @@ export default function Home() {
   const [selectedKey, setSelectedKey] = useState<string>(() => dateKey(new Date()));
   const [popoverKey, setPopoverKey] = useState<string | null>(null);
   const [showNoDeadline, setShowNoDeadline] = useState(false);
+  const [openLineage, setOpenLineage] = useState<string | null>(null);
 
   async function refresh() {
     const [r, t, a] = await Promise.all([
@@ -748,6 +750,18 @@ export default function Home() {
                                 >
                                   {t.description}
                                 </p>
+                              )}
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenLineage((prev) => (prev === t._id ? null : t._id));
+                                }}
+                                className="mt-1 text-[10px] text-zinc-500 hover:text-blue-700"
+                              >
+                                {openLineage === t._id ? '▼ 출처 닫기' : '▶ 출처 보기'}
+                              </button>
+                              {openLineage === t._id && (
+                                <LineagePanel type="task" id={t._id} />
                               )}
                             </div>
                             <button

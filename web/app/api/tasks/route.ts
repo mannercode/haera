@@ -23,11 +23,17 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'title is required' }, { status: 400 });
   }
   const deadline = body?.deadline ? new Date(body.deadline) : null;
+  const sourceIds: string[] = [];
+  if (Array.isArray(body?.sourceRawIds)) {
+    for (const x of body.sourceRawIds) if (typeof x === 'string' && x) sourceIds.push(x);
+  }
+  if (typeof body?.sourceRawId === 'string' && body.sourceRawId) sourceIds.push(body.sourceRawId);
+  const dedupSources = Array.from(new Set(sourceIds));
   const doc: Task = {
     title,
     deadline: deadline && !isNaN(deadline.getTime()) ? deadline : null,
     description: typeof body?.description === 'string' ? body.description : undefined,
-    sourceRawId: typeof body?.sourceRawId === 'string' ? body.sourceRawId : undefined,
+    sourceRawIds: dedupSources.length > 0 ? dedupSources : undefined,
     priority: ['low', 'normal', 'high'].includes(body?.priority) ? body.priority : 'normal',
     status: 'todo',
     createdAt: new Date(),

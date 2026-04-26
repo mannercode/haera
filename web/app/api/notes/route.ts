@@ -36,11 +36,17 @@ export async function POST(req: NextRequest) {
         .filter((t: unknown) => typeof t === 'string' && t.trim())
         .map((t: string) => t.trim())
     : undefined;
+  const sourceIds: string[] = [];
+  if (Array.isArray(body?.sourceRawIds)) {
+    for (const x of body.sourceRawIds) if (typeof x === 'string' && x) sourceIds.push(x);
+  }
+  if (typeof body?.sourceRawId === 'string' && body.sourceRawId) sourceIds.push(body.sourceRawId);
+  const dedupSources = Array.from(new Set(sourceIds));
   const doc: Note = {
     title,
     content,
     tags,
-    sourceRawId: typeof body?.sourceRawId === 'string' ? body.sourceRawId : undefined,
+    sourceRawIds: dedupSources.length > 0 ? dedupSources : undefined,
     createdAt: new Date(),
   };
   const db = await getDb();
