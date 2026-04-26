@@ -29,10 +29,6 @@
         "prepare-mounts": "mkdir -p ${localEnv:HOME}/.claude ${localEnv:HOME}/.config",
         "prepare-files": "touch ${localEnv:HOME}/.claude.json"
     },
-    "postStartCommand": {
-        "infra": "docker compose -f .devcontainer/compose.yml up -d"
-    },
-    "waitFor": "postStartCommand",
     "forwardPorts": [
         5010,
         5020

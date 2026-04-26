@@ -1,0 +1,34 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getDb, RawInput, RawStatus } from '@/lib/mongodb';
+
+export const dynamic = 'force-dynamic';
+
+export async function GET(req: NextRequest) {
+  const status = (req.nextUrl.searchParams.get('status') as RawStatus | null) ?? undefined;
+  const db = await getDb();
+  const filter = status ? { status } : {};
+  const docs = await db
+    .collection<RawInput>('raw_inputs')
+    .find(filter)
+    .sort({ createdAt: -1 })
+    .limit(200)
+    .toArray();
+  return NextResponse.json(docs);
+}
+
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+  const content = typeof body?.content === 'string' ? body.content.trim() : '';
+  if (!content) {
+    return NextResponse.json({ error: 'content is required' }, { status: 400 });
+  }
+  const db = await getDb();
+  const doc: RawInput = {
+    content,
+    source: typeof body?.source === 'string' ? body.source : undefined,
+    createdAt: new Date(),
+    status: 'pending',
+  };
+  const result = await db.collection<RawInput>('raw_inputs').insertOne(doc);
+  return NextResponse.json({ _id: result.insertedId, ...doc });
+}
