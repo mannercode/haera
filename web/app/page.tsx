@@ -157,6 +157,9 @@ export default function Home() {
   const [loadedFromRawId, setLoadedFromRawId] = useState<string | null>(null);
   const [reanalyzeRawId, setReanalyzeRawId] = useState<string | null>(null);
   const [continueRawId, setContinueRawId] = useState<string | null>(null);
+  // History navigation: -1 = composing new, 0+ = walking past raws
+  const [historyIndex, setHistoryIndex] = useState(-1);
+  const [savedDraft, setSavedDraft] = useState('');
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [loginStep, setLoginStep] = useState<'idle' | 'urlReady' | 'submitting'>('idle');
   const [loginUrl, setLoginUrl] = useState('');
@@ -247,6 +250,8 @@ export default function Home() {
       setLoadedFromRawId(null);
       setReanalyzeRawId(null);
       setContinueRawId(null);
+      setHistoryIndex(-1);
+      setSavedDraft('');
     }
 
     let res: Response;
@@ -469,6 +474,43 @@ export default function Home() {
     () => allTasks.filter((t) => !t.deadline && t.status === 'todo'),
     [allTasks],
   );
+
+  // Own raws sorted newest-first, used for ↑↓ history navigation in the input.
+  // Excludes incoming items (which live in the 받은 항목 inbox).
+  const myRaws = useMemo(
+    () =>
+      [...raws]
+        .filter((r) => !r.transferredFrom)
+        .sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? '')),
+    [raws],
+  );
+
+  function historyUp() {
+    if (myRaws.length === 0) return;
+    if (historyIndex === -1) setSavedDraft(text);
+    const next = Math.min(historyIndex + 1, myRaws.length - 1);
+    if (next === historyIndex) return;
+    const r = myRaws[next];
+    setHistoryIndex(next);
+    setText(r.content);
+    setReanalyzeRawId(r._id);
+    setLoadedFromRawId(null);
+    setContinueRawId(null);
+  }
+
+  function historyDown() {
+    if (historyIndex < 0) return;
+    const next = historyIndex - 1;
+    setHistoryIndex(next);
+    if (next === -1) {
+      setText(savedDraft);
+      setReanalyzeRawId(null);
+    } else {
+      const r = myRaws[next];
+      setText(r.content);
+      setReanalyzeRawId(r._id);
+    }
+  }
 
   const todayKey = mounted ? dateKey(new Date()) : '';
   const nowMs = mounted ? Date.now() : 0;
@@ -818,6 +860,33 @@ export default function Home() {
           </div>
         )}
         <div className="flex items-stretch gap-2">
+          <div className="flex flex-col justify-between gap-1">
+            <button
+              type="button"
+              onClick={historyUp}
+              disabled={myRaws.length === 0 || historyIndex >= myRaws.length - 1}
+              className="flex h-8 w-8 items-center justify-center rounded border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100 disabled:opacity-40"
+              title="이전 입력 (↑)"
+              aria-label="이전 입력"
+            >
+              ↑
+            </button>
+            {historyIndex >= 0 && (
+              <span className="text-center text-[10px] text-zinc-500">
+                {historyIndex + 1}/{myRaws.length}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={historyDown}
+              disabled={historyIndex < 0}
+              className="flex h-8 w-8 items-center justify-center rounded border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100 disabled:opacity-40"
+              title="다음 입력 (↓) / 작성 중인 입력으로"
+              aria-label="다음 입력"
+            >
+              ↓
+            </button>
+          </div>
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
@@ -825,9 +894,18 @@ export default function Home() {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 submit();
+                return;
+              }
+              // ↑↓ for history when meta/ctrl held (avoids conflict with cursor movement)
+              if ((e.metaKey || e.ctrlKey) && e.key === 'ArrowUp') {
+                e.preventDefault();
+                historyUp();
+              } else if ((e.metaKey || e.ctrlKey) && e.key === 'ArrowDown') {
+                e.preventDefault();
+                historyDown();
               }
             }}
-            placeholder="내용 붙여넣기 / 질문 / 명령 / 파일 드래그 — Enter로 분석, Shift+Enter 줄바꿈"
+            placeholder="내용 붙여넣기 / 질문 / 명령 / 파일 드래그 — Enter로 분석, Shift+Enter 줄바꿈, Ctrl+↑↓로 이전 입력 탐색"
             rows={4}
             className="flex-1 resize-y rounded border border-zinc-300 bg-white px-3 py-2 font-mono text-sm"
           />
