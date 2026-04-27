@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { readFile, unlink } from 'node:fs/promises';
-import path from 'node:path';
 import { getDb, Attachment } from '@/lib/mongodb';
+import { deleteObject, getObjectBuffer, isLegacyLocalPath } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -19,7 +19,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   if (!doc) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
   try {
-    const buf = await readFile(doc.storagePath);
+    const buf = isLegacyLocalPath(doc.storagePath)
+      ? await readFile(doc.storagePath)
+      : await getObjectBuffer(doc.storagePath);
     return new Response(new Uint8Array(buf), {
       headers: {
         'Content-Type': doc.mimeType || 'application/octet-stream',
@@ -27,8 +29,11 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
         'Cache-Control': 'private, max-age=3600',
       },
     });
-  } catch {
-    return NextResponse.json({ error: 'file missing on disk' }, { status: 410 });
+  } catch (e) {
+    return NextResponse.json(
+      { error: 'file missing or unreadable', detail: (e as Error).message },
+      { status: 410 },
+    );
   }
 }
 
@@ -42,13 +47,17 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
     .collection<Attachment>('attachments')
     .findOne({ _id: new ObjectId(id) as unknown as string });
   if (!doc) return NextResponse.json({ deleted: 0 });
-  // Best-effort filesystem delete; ignore if file already gone.
   try {
-    if (doc.storagePath.startsWith(path.resolve('/var/haera/uploads'))) {
-      await unlink(doc.storagePath);
+    if (isLegacyLocalPath(doc.storagePath)) {
+      // Legacy local file
+      if (doc.storagePath.startsWith('/var/haera/uploads/')) {
+        await unlink(doc.storagePath).catch(() => {});
+      }
+    } else {
+      await deleteObject(doc.storagePath);
     }
   } catch {
-    /* ignore */
+    /* best effort */
   }
   const res = await db
     .collection<Attachment>('attachments')

@@ -1,8 +1,12 @@
 import { NextRequest } from 'next/server';
 import { spawn } from 'node:child_process';
+import { mkdtemp, writeFile, rm, readFile } from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
 import { ObjectId } from 'mongodb';
 import { getDb, Note, Task, Attachment } from '@/lib/mongodb';
 import { getClaudeToken } from '@/lib/claude';
+import { getObjectBuffer, isLegacyLocalPath } from '@/lib/storage';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -54,6 +58,25 @@ export async function POST(req: NextRequest) {
         })
         .join('\n')
     : '(없음)';
+
+  // Materialize S3 attachments to a temp dir so Claude's Read tool can open them.
+  // Legacy local paths pass through unchanged. Cleanup happens after the stream ends.
+  let tempDir: string | null = null;
+  const localPathById = new Map<string, string>();
+  if (attachments.length > 0) {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'haera-attach-'));
+    await Promise.all(
+      attachments.map(async (a) => {
+        const filename = `${String(a._id)}__${a.filename}`;
+        const localPath = path.join(tempDir!, filename);
+        const buf = isLegacyLocalPath(a.storagePath)
+          ? await readFile(a.storagePath)
+          : await getObjectBuffer(a.storagePath);
+        await writeFile(localPath, buf);
+        localPathById.set(String(a._id), localPath);
+      }),
+    );
+  }
 
   const tasksBlock = tasks.length
     ? tasks
@@ -109,7 +132,7 @@ ${tasksBlock}
 
 ${attachments.length > 0
   ? `## 첨부 파일 — 반드시 Read 도구로 모두 열어보고 내용을 파악해라
-${attachments.map((a) => `- 경로: ${a.storagePath}\n  원본 이름: ${a.filename}\n  타입: ${a.mimeType ?? 'unknown'} (${a.size} bytes)`).join('\n')}
+${attachments.map((a) => `- 경로: ${localPathById.get(String(a._id)) ?? a.storagePath}\n  원본 이름: ${a.filename}\n  타입: ${a.mimeType ?? 'unknown'} (${a.size} bytes)`).join('\n')}
 
 위 파일들은 사용자가 첨부한 자료다. Read 도구로 각 파일을 열어서 내용을 본 다음, 사용자 입력과 함께 종합해서 처리해라.
 
@@ -205,6 +228,9 @@ ${attachments.length > 0 ? '- 첨부 파일 내용은 Read 도구로 읽어서 �
       proc.on('error', (e) => {
         send({ type: 'error', message: e.message });
         try { controller.close(); } catch {}
+        if (tempDir) {
+          rm(tempDir, { recursive: true, force: true }).catch(() => {});
+        }
       });
 
       proc.on('exit', (code) => {
@@ -213,6 +239,9 @@ ${attachments.length > 0 ? '- 첨부 파일 내용은 Read 도구로 읽어서 �
         }
         send({ type: 'done' });
         try { controller.close(); } catch {}
+        if (tempDir) {
+          rm(tempDir, { recursive: true, force: true }).catch(() => {});
+        }
       });
 
       proc.stdin.end(prompt);

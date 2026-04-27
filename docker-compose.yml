@@ -10,10 +10,38 @@ services:
       MONGODB_DB: ${MONGODB_DB:-haera}
       # Optional: pre-set a token to skip the web login flow.
       CLAUDE_CODE_OAUTH_TOKEN: ${CLAUDE_CODE_OAUTH_TOKEN:-}
+      # Object storage (MinIO in dev, drop-in compatible with AWS S3 in prod).
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-haera}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-haera}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-haera-dev-secret}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
     volumes:
-      - ./var:/var/haera   # single bind mount: auth, uploads, all persistent state
+      - ./var:/var/haera   # auth + claude state (uploads moved to MinIO)
+    depends_on:
+      - minio
     healthcheck:
       test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/', r => process.exit(r.statusCode < 500 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  minio:
+    image: minio/minio:latest
+    container_name: haera-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-haera}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-haera-dev-secret}
+    volumes:
+      - ./var/minio:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
       interval: 30s
       timeout: 5s
       retries: 3

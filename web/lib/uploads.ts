@@ -1,16 +1,9 @@
-import { mkdir, writeFile, stat as fsStat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
-import path from 'node:path';
+import { putObject, ensureBucket } from './storage';
 
-export const UPLOAD_DIR = '/var/haera/uploads';
 export const MAX_BYTES = 50 * 1024 * 1024; // 50MB per file
 
-export async function ensureUploadDir(): Promise<void> {
-  await mkdir(UPLOAD_DIR, { recursive: true });
-}
-
 export function sanitizeFilename(name: string): string {
-  // Strip path separators and control chars; keep extension/Korean chars.
   const cleaned = name
     .replace(/[/\\\x00-\x1f]+/g, '_')
     .replace(/^\.+/, '')
@@ -28,28 +21,21 @@ export async function saveUploadedFile(
 }> {
   if (file.size === 0) throw new Error('빈 파일');
   if (file.size > MAX_BYTES) {
-    throw new Error(`파일이 너무 큽니다 (${Math.round(file.size / 1024 / 1024)}MB > 50MB)`);
+    throw new Error(
+      `파일이 너무 큽니다 (${Math.round(file.size / 1024 / 1024)}MB > 50MB)`,
+    );
   }
-  await ensureUploadDir();
+  await ensureBucket();
   const safeName = sanitizeFilename(file.name);
   const id = randomUUID();
-  const stored = `${id}__${safeName}`;
-  const storagePath = path.join(UPLOAD_DIR, stored);
+  // S3 object key, used as canonical storagePath in DB.
+  const key = `uploads/${id}__${safeName}`;
   const arrayBuf = await file.arrayBuffer();
-  await writeFile(storagePath, new Uint8Array(arrayBuf));
+  await putObject(key, new Uint8Array(arrayBuf), file.type || undefined);
   return {
     filename: safeName,
-    storagePath,
+    storagePath: key,
     size: file.size,
     mimeType: file.type || undefined,
   };
-}
-
-export async function fileExists(p: string): Promise<boolean> {
-  try {
-    await fsStat(p);
-    return true;
-  } catch {
-    return false;
-  }
 }
