@@ -62,7 +62,7 @@ export function SendToOthersButton({
         body: JSON.stringify({ text, recipientIds: selectedIds, mode }),
       });
       const data = await r.json();
-      if (!r.ok) throw new Error(data.error || `보내기 실패 (${r.status})`);
+      if (!r.ok) throw new Error(data.error || `전달 실패 (${r.status})`);
       setOpen(false);
       setSelectedIds([]);
       onSent?.({ mode });
@@ -82,7 +82,7 @@ export function SendToOthersButton({
         className="rounded border border-zinc-300 bg-white px-3 text-sm font-medium text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
         title="다른 사용자에게 전달 또는 공유"
       >
-        → 다른 사람에게
+        전달하기
       </button>
       {open &&
         mounted &&
@@ -96,7 +96,7 @@ export function SendToOthersButton({
               onMouseDown={(e) => e.stopPropagation()}
             >
               <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-sm font-semibold">다른 사람에게 보내기</h3>
+                <h3 className="text-sm font-semibold">전달하기</h3>
                 <button
                   onClick={() => setOpen(false)}
                   className="text-zinc-400 hover:text-zinc-700"

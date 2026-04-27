@@ -62,6 +62,24 @@ function fmtSize(n?: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
+const TrashIcon = () => (
+  <svg
+    viewBox="0 0 14 14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="h-3.5 w-3.5"
+    aria-hidden
+  >
+    <path d="M2.5 4h9" />
+    <path d="M5.5 4V2.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5V4" />
+    <path d="M3.5 4l.5 7.5a1 1 0 0 0 1 .9h4a1 1 0 0 0 1-.9L10.5 4" />
+    <path d="M6 6.5v4M8 6.5v4" />
+  </svg>
+);
+
 const PAGE_SIZE = 20;
 
 function cls(...parts: (string | false | null | undefined)[]): string {
@@ -357,10 +375,11 @@ function KnowledgeInner() {
                           e.stopPropagation();
                           purgeItem(item);
                         }}
-                        className="ml-2 text-xs text-zinc-400 hover:text-red-600"
+                        className="ml-2 flex h-5 w-5 items-center justify-center rounded text-zinc-400 hover:bg-red-50 hover:text-red-600"
                         title="영구 삭제"
+                        aria-label="영구 삭제"
                       >
-                        ✕
+                        <TrashIcon />
                       </button>
                     </>
                   ) : item.type !== 'transfer' ? (
@@ -369,9 +388,11 @@ function KnowledgeInner() {
                         e.stopPropagation();
                         deleteItem(item);
                       }}
-                      className="ml-2 text-xs text-zinc-400 hover:text-red-600"
+                      className="ml-2 flex h-5 w-5 items-center justify-center rounded text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                      title="삭제"
+                      aria-label="삭제"
                     >
-                      ✕
+                      <TrashIcon />
                     </button>
                   ) : null}
                 </div>

@@ -72,6 +72,24 @@ function cls(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ');
 }
 
+const TrashIcon = () => (
+  <svg
+    viewBox="0 0 14 14"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="h-3.5 w-3.5"
+    aria-hidden
+  >
+    <path d="M2.5 4h9" />
+    <path d="M5.5 4V2.5a.5.5 0 0 1 .5-.5h2a.5.5 0 0 1 .5.5V4" />
+    <path d="M3.5 4l.5 7.5a1 1 0 0 0 1 .9h4a1 1 0 0 0 1-.9L10.5 4" />
+    <path d="M6 6.5v4M8 6.5v4" />
+  </svg>
+);
+
 export default function Home() {
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -447,7 +465,7 @@ export default function Home() {
             받은 항목 ({inbox.length})
           </h2>
           <p className="text-[11px] text-blue-700/80">
-            본문 클릭 → 입력창에 채워짐 (편집 후 보내기). 또는 "수락"으로 즉시 정리.
+            본문 클릭 → 입력창에 채워짐 (편집 후 분석하기). 또는 "수락"으로 즉시 정리.
           </p>
           <ul className="space-y-2">
             {inbox.map((it) => {
@@ -519,7 +537,7 @@ export default function Home() {
             정리 대기 ({pending.length})
           </h2>
           <p className="text-[11px] text-zinc-500">
-            본문 클릭하면 입력창에 채워집니다 — 수정 후 [보내기] 누르면 처리되고 원본은 자동 삭제.
+            본문 클릭하면 입력창에 채워집니다 — 수정 후 [분석하기] 누르면 처리되고 원본은 자동 삭제.
           </p>
           <ul className="space-y-2">
             {pending.map((r) => {
@@ -547,9 +565,11 @@ export default function Home() {
                       </button>
                       <button
                         onClick={() => deleteRaw(r._id)}
-                        className="hover:text-red-600"
+                        className="flex h-5 w-5 items-center justify-center rounded text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                        title="삭제"
+                        aria-label="삭제"
                       >
-                        삭제
+                        <TrashIcon />
                       </button>
                     </div>
                   </div>
@@ -579,7 +599,7 @@ export default function Home() {
             정리 실패 ({failed.length})
           </h2>
           <p className="text-[11px] text-red-700/70">
-            아래 사유 확인 후 본문 클릭 → 입력창에서 수정 → 다시 [보내기]
+            아래 사유 확인 후 본문 클릭 → 입력창에서 수정 → 다시 [분석하기]
           </p>
           <ul className="space-y-2">
             {failed.map((r) => {
@@ -598,9 +618,11 @@ export default function Home() {
                     <span>{fmtDateTime(r.createdAt)}</span>
                     <button
                       onClick={() => deleteRaw(r._id)}
-                      className="hover:text-red-700"
+                      className="flex h-5 w-5 items-center justify-center rounded text-zinc-400 hover:bg-red-50 hover:text-red-700"
+                      title="삭제"
+                      aria-label="삭제"
                     >
-                      삭제
+                      <TrashIcon />
                     </button>
                   </div>
                   {r.error ? (
@@ -738,7 +760,7 @@ export default function Home() {
                 submit();
               }
             }}
-            placeholder="내용 붙여넣기 / 질문 / 명령 / 파일 드래그 — Enter 전송, Shift+Enter 줄바꿈"
+            placeholder="내용 붙여넣기 / 질문 / 명령 / 파일 드래그 — Enter로 분석, Shift+Enter 줄바꿈"
             rows={4}
             className="flex-1 resize-y rounded border border-zinc-300 bg-white px-3 py-2 font-mono text-sm"
           />
@@ -747,7 +769,7 @@ export default function Home() {
             onClick={() => submit()}
             className="rounded bg-blue-600 px-4 text-sm font-medium text-white disabled:opacity-50"
           >
-            {submitting ? '처리 중...' : '보내기'}
+            {submitting ? '처리 중...' : '분석하기'}
           </button>
           <SendToOthersButton
             text={text}
@@ -800,7 +822,7 @@ export default function Home() {
         </div>
         {loadedFromRawId && (
           <div className="text-xs text-blue-700">
-            대기/실패 항목에서 로드됨 — 보내기 후 원본 자동 삭제됩니다.{' '}
+            대기/실패 항목에서 로드됨 — 분석하기 후 원본 자동 삭제됩니다.{' '}
             <button
               type="button"
               onClick={() => {
@@ -1111,9 +1133,11 @@ export default function Home() {
                               />
                               <button
                                 onClick={() => deleteTask(t._id)}
-                                className="text-xs text-zinc-400 hover:text-red-600"
+                                className="flex h-5 w-5 items-center justify-center rounded text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                                title="삭제"
+                                aria-label="삭제"
                               >
-                                ✕
+                                <TrashIcon />
                               </button>
                             </div>
                           </li>
@@ -1158,9 +1182,11 @@ export default function Home() {
                   </div>
                   <button
                     onClick={() => deleteTask(t._id)}
-                    className="self-start text-xs text-zinc-400 hover:text-red-600"
+                    className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-400 hover:bg-red-50 hover:text-red-600"
+                    title="삭제"
+                    aria-label="삭제"
                   >
-                    ✕
+                    <TrashIcon />
                   </button>
                 </li>
               ))}

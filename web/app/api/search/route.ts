@@ -150,8 +150,8 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Transfer history (only when explicitly requested — don't pollute default view).
-  if (type === 'transfer') {
+  // Transfer history — included in default ('전체') view.
+  if (!type || type === 'transfer') {
     const filter: Record<string, unknown> = {
       $or: [{ fromUserId: owner }, { toUserId: owner }],
     };
@@ -206,8 +206,8 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Trash items (only when explicitly requested).
-  if (type === 'trash') {
+  // Trash items — included in default ('전체') view.
+  if (!type || type === 'trash') {
     const filter: Record<string, unknown> = { ownerId: owner };
     if (re) {
       filter.$or = [
