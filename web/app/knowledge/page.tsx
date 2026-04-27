@@ -207,6 +207,9 @@ function KnowledgeInner() {
 
   async function purgeItem(item: Item) {
     if (item.type !== 'trash') return;
+    if (!confirm(`"${item.title}" 항목을 영구 삭제할까요? 복원할 수 없습니다.`)) {
+      return;
+    }
     await fetch(`/api/trash/${item._id}`, { method: 'DELETE' });
     await load();
   }

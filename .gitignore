@@ -10,3 +10,4 @@ dist
 .env*.local
 /var/
 /var/minio/
+/var/caddy/
