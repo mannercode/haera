@@ -15,6 +15,8 @@ type RawInput = {
   transferredFrom?: string;
   transferredAt?: string;
   transferMode?: 'transfer' | 'share';
+  response?: string;
+  parentRawId?: string;
 };
 
 type Task = {
@@ -160,6 +162,9 @@ export default function Home() {
   // History navigation: -1 = composing new, 0+ = walking past raws
   const [historyIndex, setHistoryIndex] = useState(-1);
   const [savedDraft, setSavedDraft] = useState('');
+  // Filled by SSE 'raw_id' event so "이어서 답변" can target the just-finished raw.
+  const [lastRawId, setLastRawId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [loginStep, setLoginStep] = useState<'idle' | 'urlReady' | 'submitting'>('idle');
   const [loginUrl, setLoginUrl] = useState('');
@@ -304,14 +309,16 @@ export default function Home() {
         for (const chunk of chunks) {
           if (!chunk.startsWith('data: ')) continue;
           const payload = chunk.slice(6);
-          let evt: { type: string; text?: string; name?: string; input?: string; message?: string };
+          let evt: { type: string; text?: string; name?: string; input?: string; message?: string; id?: string };
           try {
             evt = JSON.parse(payload);
           } catch (parseErr) {
             console.warn('[haera submit] SSE chunk parse failed:', payload.slice(0, 200), parseErr);
             continue;
           }
-          if (evt.type === 'text' && evt.text) {
+          if (evt.type === 'raw_id' && evt.id) {
+            setLastRawId(evt.id);
+          } else if (evt.type === 'text' && evt.text) {
             setStreamText((s) => s + evt.text);
           } else if (evt.type === 'thinking' && evt.text) {
             setStreamThinking((s) => s + evt.text);
@@ -859,6 +866,62 @@ export default function Home() {
             📎 여기 놓으면 첨부됩니다
           </div>
         )}
+
+        {/* 과거 입력 검색 (인라인) */}
+        <div className="relative">
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="🔍 과거 입력 검색 — 클릭하면 입력창에 로드"
+            className="w-full rounded border border-zinc-300 bg-white px-3 py-1.5 text-xs"
+          />
+          {searchQuery.trim() && (() => {
+            const q = searchQuery.toLowerCase();
+            const matches = myRaws
+              .filter(
+                (r) =>
+                  r.content.toLowerCase().includes(q) ||
+                  (r.response ?? '').toLowerCase().includes(q),
+              )
+              .slice(0, 8);
+            if (matches.length === 0) {
+              return (
+                <div className="absolute z-20 mt-1 w-full rounded border border-zinc-200 bg-white p-2 text-xs text-zinc-500 shadow-md">
+                  검색 결과 없음
+                </div>
+              );
+            }
+            return (
+              <ul className="absolute z-20 mt-1 max-h-72 w-full overflow-y-auto rounded border border-zinc-200 bg-white shadow-md">
+                {matches.map((r) => (
+                  <li key={r._id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setText(r.content);
+                        setReanalyzeRawId(r._id);
+                        setLoadedFromRawId(null);
+                        setContinueRawId(null);
+                        setHistoryIndex(-1);
+                        setSearchQuery('');
+                      }}
+                      className="block w-full border-b border-zinc-100 px-3 py-2 text-left text-xs hover:bg-blue-50"
+                    >
+                      <div className="line-clamp-2 text-zinc-800">{r.content}</div>
+                      {r.response && (
+                        <div className="mt-1 line-clamp-1 text-[10px] text-zinc-500">
+                          → {r.response}
+                        </div>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
+        </div>
+
         <div className="flex items-stretch gap-2">
           <div className="flex flex-col justify-between gap-1">
             <button
@@ -1053,16 +1116,39 @@ export default function Home() {
               </pre>
             )}
             {!submitting && (streamText || streamTools.length > 0) && (
-              <button
-                onClick={() => {
-                  setStreamText('');
-                  setStreamThinking('');
-                  setStreamTools([]);
-                }}
-                className="text-xs text-zinc-500 hover:text-zinc-800"
-              >
-                지우기
-              </button>
+              <div className="flex flex-wrap gap-2">
+                {lastRawId && streamText && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setContinueRawId(lastRawId);
+                      setReanalyzeRawId(null);
+                      setLoadedFromRawId(null);
+                      setText('');
+                      setHistoryIndex(-1);
+                      setStreamText('');
+                      setStreamThinking('');
+                      setStreamTools([]);
+                      if (typeof window !== 'undefined') {
+                        window.scrollTo({ top: 0, behavior: 'smooth' });
+                      }
+                    }}
+                    className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+                  >
+                    ↩ 이어서 답변
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setStreamText('');
+                    setStreamThinking('');
+                    setStreamTools([]);
+                  }}
+                  className="text-xs text-zinc-500 hover:text-zinc-800"
+                >
+                  지우기
+                </button>
+              </div>
             )}
           </div>
         )}
