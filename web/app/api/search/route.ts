@@ -1,11 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getDb, Note, RawInput, Task, Attachment } from '@/lib/mongodb';
+import { ObjectId } from 'mongodb';
+import {
+  getDb,
+  Note,
+  RawInput,
+  Task,
+  Attachment,
+  Transfer,
+  TrashItem,
+  User,
+} from '@/lib/mongodb';
 import { requireOwner, isAuthResponse } from '@/lib/owner';
 
 export const dynamic = 'force-dynamic';
 
 type HistoryItem = {
-  type: 'note' | 'raw' | 'task' | 'attachment';
+  type: 'note' | 'raw' | 'task' | 'attachment' | 'transfer' | 'trash';
   _id: string;
   title: string;
   content: string;
@@ -16,6 +26,15 @@ type HistoryItem = {
   error?: string;
   size?: number;
   mimeType?: string;
+  // Transfer-specific
+  transferDirection?: 'sent' | 'received';
+  transferMode?: 'transfer' | 'share';
+  transferPartner?: string;
+  transferTargetType?: string;
+  // Trash-specific
+  trashKind?: 'task' | 'note' | 'raw' | 'attachment';
+  deletedAt?: string;
+  trashOriginalId?: string;
 };
 
 function toIso(v: Date | string | undefined): string {
@@ -127,6 +146,106 @@ export async function GET(req: NextRequest) {
         size: a.size,
         mimeType: a.mimeType,
         createdAt: toIso(a.createdAt),
+      });
+    }
+  }
+
+  // Transfer history (only when explicitly requested — don't pollute default view).
+  if (type === 'transfer') {
+    const filter: Record<string, unknown> = {
+      $or: [{ fromUserId: owner }, { toUserId: owner }],
+    };
+    if (re) {
+      filter.$and = [
+        { $or: [{ title: re }, { contentSnippet: re }] },
+      ];
+    }
+    const docs = await db
+      .collection<Transfer>('transfers')
+      .find(filter)
+      .sort({ at: -1 })
+      .limit(PER_COLLECTION_CAP)
+      .toArray();
+    const partnerIds = Array.from(
+      new Set(docs.flatMap((d) => [d.fromUserId, d.toUserId])),
+    );
+    const users = partnerIds.length
+      ? await db
+          .collection<User>('users')
+          .find(
+            {
+              _id: {
+                $in: partnerIds.map((s) => new ObjectId(s) as unknown as string),
+              },
+            },
+            { projection: { passwordHash: 0 } },
+          )
+          .toArray()
+      : [];
+    const userById = new Map(users.map((u) => [String(u._id), u.name]));
+    for (const d of docs) {
+      const direction: 'sent' | 'received' =
+        d.fromUserId === owner ? 'sent' : 'received';
+      const partnerId = direction === 'sent' ? d.toUserId : d.fromUserId;
+      const partnerName = userById.get(partnerId) ?? '알 수 없음';
+      items.push({
+        type: 'transfer',
+        _id: String(d._id),
+        title:
+          d.title ??
+          (direction === 'sent'
+            ? `${partnerName}에게 ${d.mode === 'share' ? '공유' : '전달'}`
+            : `${partnerName}에게서 ${d.mode === 'share' ? '공유받음' : '전달받음'}`),
+        content: d.contentSnippet ?? '',
+        createdAt: toIso(d.at),
+        transferDirection: direction,
+        transferMode: d.mode,
+        transferPartner: partnerName,
+        transferTargetType: d.type,
+      });
+    }
+  }
+
+  // Trash items (only when explicitly requested).
+  if (type === 'trash') {
+    const filter: Record<string, unknown> = { ownerId: owner };
+    if (re) {
+      filter.$or = [
+        { 'payload.title': re },
+        { 'payload.content': re },
+        { 'payload.filename': re },
+        { 'payload.description': re },
+      ];
+    }
+    const docs = await db
+      .collection<TrashItem>('trash')
+      .find(filter)
+      .sort({ deletedAt: -1 })
+      .limit(PER_COLLECTION_CAP)
+      .toArray();
+    for (const d of docs) {
+      const p = d.payload as Record<string, unknown>;
+      const title =
+        (p.title as string | undefined) ??
+        (p.filename as string | undefined) ??
+        (typeof p.content === 'string'
+          ? (p.content as string).split('\n')[0].slice(0, 60)
+          : '(이름 없음)');
+      const content =
+        typeof p.content === 'string'
+          ? (p.content as string)
+          : typeof p.description === 'string'
+            ? (p.description as string)
+            : '';
+      items.push({
+        type: 'trash',
+        _id: String(d._id),
+        title,
+        content,
+        trashKind: d.kind,
+        trashOriginalId: d.originalId,
+        deletedAt: toIso(d.deletedAt),
+        createdAt: toIso(d.deletedAt),
       });
     }
   }

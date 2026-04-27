@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
-import { readFile, unlink } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { getDb, Attachment } from '@/lib/mongodb';
-import { deleteObject, getObjectBuffer, isLegacyLocalPath } from '@/lib/storage';
+import { getObjectBuffer, isLegacyLocalPath } from '@/lib/storage';
 import { requireOwner, isAuthResponse } from '@/lib/owner';
+import { trashDoc } from '@/lib/trash';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -52,18 +53,9 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     .collection<Attachment>('attachments')
     .findOne({ _id: new ObjectId(id) as unknown as string, ownerId: owner });
   if (!doc) return NextResponse.json({ deleted: 0 });
-  try {
-    if (isLegacyLocalPath(doc.storagePath)) {
-      // Legacy local file
-      if (doc.storagePath.startsWith('/var/haera/uploads/')) {
-        await unlink(doc.storagePath).catch(() => {});
-      }
-    } else {
-      await deleteObject(doc.storagePath);
-    }
-  } catch {
-    /* best effort */
-  }
+  // Soft delete: snapshot to trash; keep S3 object so restore can re-attach.
+  // Permanent purge from /trash is what actually removes the bytes.
+  await trashDoc(db, owner, 'attachment', doc as unknown as { _id: unknown } & Record<string, unknown>);
   const res = await db
     .collection<Attachment>('attachments')
     .deleteOne({ _id: new ObjectId(id) as unknown as string, ownerId: owner });

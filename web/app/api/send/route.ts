@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
-import { getDb, RawInput, User } from '@/lib/mongodb';
+import { getDb, RawInput, Transfer, User } from '@/lib/mongodb';
 import { requireOwner, isAuthResponse } from '@/lib/owner';
 
 export const dynamic = 'force-dynamic';
@@ -52,6 +52,20 @@ export async function POST(req: NextRequest) {
     transferMode: mode,
   }));
   const result = await db.collection<RawInput>('raw_inputs').insertMany(docs);
+
+  // Audit log per recipient.
+  const insertedIds = Object.values(result.insertedIds).map((v) => String(v));
+  const logs: Transfer[] = recipients.map((r, i) => ({
+    fromUserId: owner,
+    toUserId: String(r._id),
+    type: 'send',
+    mode,
+    sourceItemId: undefined,
+    targetItemId: insertedIds[i],
+    contentSnippet: text.length > 200 ? text.slice(0, 200) + '...' : text,
+    at: now,
+  }));
+  if (logs.length > 0) await db.collection<Transfer>('transfers').insertMany(logs);
 
   return NextResponse.json({
     sent: result.insertedCount,

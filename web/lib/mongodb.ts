@@ -54,6 +54,7 @@ export interface Task {
   createdAt: Date;
   transferredFrom?: string;
   transferredAt?: Date;
+  transferMode?: 'transfer' | 'share';
 }
 
 export interface Note {
@@ -67,6 +68,34 @@ export interface Note {
   createdAt: Date;
   transferredFrom?: string;
   transferredAt?: Date;
+  transferMode?: 'transfer' | 'share';
+}
+
+export type TrashKind = 'task' | 'note' | 'raw' | 'attachment';
+
+export interface TrashItem {
+  _id?: string;
+  ownerId: string;
+  kind: TrashKind;
+  originalId: string;
+  payload: Record<string, unknown>;
+  deletedAt: Date;
+}
+
+export type TransferType = 'task' | 'note' | 'raw' | 'send';
+export type TransferMode = 'transfer' | 'share';
+
+export interface Transfer {
+  _id?: string;
+  fromUserId: string;
+  toUserId: string;
+  type: TransferType;
+  mode: TransferMode;
+  sourceItemId?: string;     // original doc id on sender side (null for /api/send)
+  targetItemId: string;      // resulting doc id on recipient side
+  title?: string;            // snapshot of title at time of transfer
+  contentSnippet?: string;   // first 200 chars of content
+  at: Date;
 }
 
 export function getSourceRawIds(doc: { sourceRawId?: string; sourceRawIds?: string[] }): string[] {

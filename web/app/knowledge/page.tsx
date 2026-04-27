@@ -6,7 +6,7 @@ import { LineagePanel } from '../lineage-panel';
 import { TransferButton } from '../transfer-button';
 
 type Item = {
-  type: 'note' | 'raw' | 'task' | 'attachment';
+  type: 'note' | 'raw' | 'task' | 'attachment' | 'transfer' | 'trash';
   _id: string;
   title: string;
   content: string;
@@ -17,6 +17,13 @@ type Item = {
   error?: string;
   size?: number;
   mimeType?: string;
+  transferDirection?: 'sent' | 'received';
+  transferMode?: 'transfer' | 'share';
+  transferPartner?: string;
+  transferTargetType?: string;
+  trashKind?: 'task' | 'note' | 'raw' | 'attachment';
+  deletedAt?: string;
+  trashOriginalId?: string;
 };
 
 type SearchResponse = {
@@ -27,12 +34,16 @@ type SearchResponse = {
   totalPages: number;
 };
 
-const TYPES: { key: '' | 'note' | 'raw' | 'task' | 'attachment'; label: string }[] = [
+type FilterKey = '' | 'note' | 'raw' | 'task' | 'attachment' | 'transfer' | 'trash';
+
+const TYPES: { key: FilterKey; label: string }[] = [
   { key: '', label: '전체' },
   { key: 'note', label: '참고정보' },
   { key: 'raw', label: '원본' },
   { key: 'task', label: '할 일' },
   { key: 'attachment', label: '첨부' },
+  { key: 'transfer', label: '전달기록' },
+  { key: 'trash', label: '삭제됨' },
 ];
 
 const TYPE_BADGE: Record<Item['type'], { label: string; cls: string }> = {
@@ -40,6 +51,8 @@ const TYPE_BADGE: Record<Item['type'], { label: string; cls: string }> = {
   raw: { label: '원본', cls: 'bg-zinc-200 text-zinc-700' },
   task: { label: '할 일', cls: 'bg-blue-100 text-blue-800' },
   attachment: { label: '첨부', cls: 'bg-purple-100 text-purple-800' },
+  transfer: { label: '전달', cls: 'bg-amber-100 text-amber-800' },
+  trash: { label: '삭제됨', cls: 'bg-red-100 text-red-800' },
 };
 
 function fmtSize(n?: number): string {
@@ -49,7 +62,7 @@ function fmtSize(n?: number): string {
   return `${(n / 1024 / 1024).toFixed(1)} MB`;
 }
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 20;
 
 function cls(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ');
@@ -85,7 +98,7 @@ function KnowledgeInner() {
   const sp = useSearchParams();
 
   const urlQ = sp.get('q') ?? '';
-  const urlType = (sp.get('type') ?? '') as '' | 'note' | 'raw' | 'task' | 'attachment';
+  const urlType = (sp.get('type') ?? '') as FilterKey;
   const urlTag = sp.get('tag') ?? '';
   const urlPage = Math.max(1, parseInt(sp.get('page') ?? '1', 10) || 1);
 
@@ -153,7 +166,6 @@ function KnowledgeInner() {
   }, [load]);
 
   async function deleteItem(item: Item) {
-    if (!confirm(`이 ${TYPE_BADGE[item.type].label} 항목을 삭제할까요?`)) return;
     const path =
       item.type === 'note'
         ? `/api/notes/${item._id}`
@@ -161,8 +173,23 @@ function KnowledgeInner() {
           ? `/api/raw/${item._id}`
           : item.type === 'attachment'
             ? `/api/upload/${item._id}`
-            : `/api/tasks/${item._id}`;
+            : item.type === 'task'
+              ? `/api/tasks/${item._id}`
+              : null;
+    if (!path) return;
     await fetch(path, { method: 'DELETE' });
+    await load();
+  }
+
+  async function restoreItem(item: Item) {
+    if (item.type !== 'trash') return;
+    await fetch(`/api/trash/${item._id}/restore`, { method: 'POST' });
+    await load();
+  }
+
+  async function purgeItem(item: Item) {
+    if (item.type !== 'trash') return;
+    await fetch(`/api/trash/${item._id}`, { method: 'DELETE' });
     await load();
   }
 
@@ -313,15 +340,40 @@ function KnowledgeInner() {
                       <TransferButton type={item.type} id={item._id} onDone={() => load()} />
                     </span>
                   )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deleteItem(item);
-                    }}
-                    className="ml-2 text-xs text-zinc-400 hover:text-red-600"
-                  >
-                    ✕
-                  </button>
+                  {item.type === 'trash' ? (
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          restoreItem(item);
+                        }}
+                        className="ml-2 text-xs text-blue-700 hover:text-blue-900"
+                        title="복원"
+                      >
+                        ↺ 복원
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          purgeItem(item);
+                        }}
+                        className="ml-2 text-xs text-zinc-400 hover:text-red-600"
+                        title="영구 삭제"
+                      >
+                        ✕
+                      </button>
+                    </>
+                  ) : item.type !== 'transfer' ? (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteItem(item);
+                      }}
+                      className="ml-2 text-xs text-zinc-400 hover:text-red-600"
+                    >
+                      ✕
+                    </button>
+                  ) : null}
                 </div>
 
                 {(item.type === 'task' || item.type === 'raw') && (
@@ -357,6 +409,49 @@ function KnowledgeInner() {
                     >
                       열기 ↗
                     </a>
+                  </div>
+                )}
+
+                {item.type === 'transfer' && (
+                  <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-zinc-500">
+                    <span
+                      className={cls(
+                        'rounded px-1.5 py-0.5',
+                        item.transferDirection === 'sent'
+                          ? 'bg-zinc-100 text-zinc-700'
+                          : 'bg-blue-50 text-blue-700',
+                      )}
+                    >
+                      {item.transferDirection === 'sent' ? '보냄' : '받음'}
+                    </span>
+                    <span
+                      className={cls(
+                        'rounded px-1.5 py-0.5',
+                        item.transferMode === 'share'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-amber-100 text-amber-800',
+                      )}
+                    >
+                      {item.transferMode === 'share' ? '공유' : '전달'}
+                    </span>
+                    {item.transferTargetType && <span>{item.transferTargetType}</span>}
+                  </div>
+                )}
+
+                {item.type === 'trash' && (
+                  <div className="mt-1 flex flex-wrap gap-2 text-[10px] text-zinc-500">
+                    {item.trashKind && (
+                      <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-zinc-700">
+                        {item.trashKind === 'task'
+                          ? '할 일'
+                          : item.trashKind === 'note'
+                            ? '참고정보'
+                            : item.trashKind === 'raw'
+                              ? '원본'
+                              : '첨부'}
+                      </span>
+                    )}
+                    {item.deletedAt && <span>{fmtDate(item.deletedAt)} 삭제</span>}
                   </div>
                 )}
 

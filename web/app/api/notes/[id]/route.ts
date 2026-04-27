@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { getDb, Note } from '@/lib/mongodb';
 import { requireOwner, isAuthResponse } from '@/lib/owner';
+import { trashDoc } from '@/lib/trash';
 
 export const dynamic = 'force-dynamic';
 
@@ -54,8 +55,13 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
   }
   const db = await getDb();
+  const oid = new ObjectId(id) as unknown as string;
+  const doc = await db.collection<Note>('notes').findOne({ _id: oid, ownerId: owner });
+  if (doc) {
+    await trashDoc(db, owner, 'note', doc as unknown as { _id: unknown } & Record<string, unknown>);
+  }
   const result = await db
     .collection<Note>('notes')
-    .deleteOne({ _id: new ObjectId(id) as unknown as string, ownerId: owner });
+    .deleteOne({ _id: oid, ownerId: owner });
   return NextResponse.json({ deleted: result.deletedCount });
 }
