@@ -3,15 +3,58 @@
 `team.tixpass.co.kr`을 기존 events 서버(`3.36.196.83`)에 합승하는 방식.
 events 프로젝트의 nginx + certbot 인프라를 그대로 사용한다.
 
-## 0. 사전 확인
+## 0. 사전 확인 / AWS 준비
 
 - ECR `tixpass:team` 이미지 존재 확인:
   ```bash
   aws ecr describe-images --repository-name tixpass --region ap-northeast-2
   ```
 - DNS: `team.tixpass.co.kr` A/CNAME → `3.36.196.83` (events와 동일 IP)
-- EC2의 IAM role에 ECR pull 권한 — 이미 `ec2-ecr-pull` 부착됨
 - events 프로젝트 (`/home/ec2-user/events`)가 동작 중 — nginx 컨테이너가 80/443 점유
+
+### S3 버킷 생성 (haera-team)
+
+```bash
+aws s3api create-bucket \
+  --bucket haera-team \
+  --region ap-northeast-2 \
+  --create-bucket-configuration LocationConstraint=ap-northeast-2
+aws s3api put-public-access-block \
+  --bucket haera-team \
+  --public-access-block-configuration \
+  "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
+```
+
+### EC2 IAM role에 S3 권한 부여
+
+EC2의 role(`ec2-ecr-pull`)에 다음 인라인 정책 추가:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::haera-team/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket"],
+      "Resource": "arn:aws:s3:::haera-team"
+    }
+  ]
+}
+```
+
+CLI로:
+```bash
+aws iam put-role-policy --role-name ec2-ecr-pull \
+  --policy-name haera-s3-access \
+  --policy-document file://s3-policy.json
+```
+
+이제 `.env`에서 `S3_ACCESS_KEY/SECRET`을 비워두면 SDK가 EC2 instance profile에서 자동으로 자격증명을 가져옴.
 
 ## 1. haera repo clone (EC2)
 
@@ -38,12 +81,13 @@ MONGODB_DB=haera
 
 CLAUDE_CODE_OAUTH_TOKEN=
 
-S3_ENDPOINT=http://haera-minio:9000
+# AWS S3 (instance role 사용 → access key 비워둠)
+S3_ENDPOINT=
 S3_REGION=ap-northeast-2
-S3_BUCKET=haera
-S3_ACCESS_KEY=$(openssl rand -hex 16)
-S3_SECRET_KEY=$(openssl rand -hex 32)
-S3_FORCE_PATH_STYLE=true
+S3_BUCKET=haera-team
+S3_ACCESS_KEY=
+S3_SECRET_KEY=
+S3_FORCE_PATH_STYLE=false
 
 SESSION_SECRET=$(openssl rand -hex 32)
 SIGNUP_CODE=0000  # 4자리 임의

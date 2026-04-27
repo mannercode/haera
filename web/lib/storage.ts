@@ -42,11 +42,21 @@ export async function ensureBucket(): Promise<void> {
   const c = getClient();
   try {
     await c.send(new HeadBucketCommand({ Bucket: bucket }));
-  } catch {
+    global._haeraBucketReady = true;
+    return;
+  } catch (headErr) {
+    // Auto-create only against custom endpoints (e.g. local MinIO). With AWS S3
+    // the bucket must be pre-provisioned (global name + IAM policy concerns).
+    if (!endpoint) {
+      throw new Error(
+        `S3 bucket '${bucket}' is not accessible (region=${region}). Create it first ` +
+          `and grant the EC2 instance role s3:ListBucket/GetObject/PutObject/DeleteObject. ` +
+          `Underlying error: ${(headErr as Error).message}`,
+      );
+    }
     try {
       await c.send(new CreateBucketCommand({ Bucket: bucket }));
     } catch (e) {
-      // 409 means bucket already exists (race condition). Otherwise rethrow.
       const code = (e as { name?: string; Code?: string }).name ?? '';
       if (!/BucketAlreadyOwnedByYou|BucketAlreadyExists/i.test(code)) throw e;
     }
