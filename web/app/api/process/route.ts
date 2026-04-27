@@ -275,9 +275,21 @@ ${attachments.map((a) => `- 경로: ${localPathById.get(String(a._id)) ?? a.stor
 
 `
   : ''}${prevConversation
-    ? `## 이전 대화 (멀티턴 컨텍스트)\n${prevConversation}\n\n`
+    ? `## 이전 대화 (멀티턴 컨텍스트)
+${prevConversation}
+
+## 멀티턴 처리 규칙 (중요)
+- 이번 입력은 **이전 대화의 후속**이다. 이전 대화에서 만들어진 task/note가 위 [진행 중인 할 일] 컨텍스트에 있을 것이다.
+- 사용자가 마감일/우선순위/제목/설명/태그 등 **변경**을 지시하면 → 반드시 \`PATCH /api/tasks/<id>\` 또는 \`PATCH /api/notes/<id>\` 로 **기존 항목을 갱신**하라. 새로 만들지 마라.
+- 변경 시 \`addSourceRawIds: ["${userRawId}"]\` 도 같이 넣어서 이번 raw를 출처에 누적.
+- 정말 새 작업/정보면 그때만 새로 만들어라.
+
+`
     : ''}${reanalyzeRawId
-    ? `## 모드: 재분석\n사용자가 본문을 수정해서 다시 분석을 요청했다. 이전에 만들었던 task/note는 이미 휴지통으로 옮겨졌으니, 새 본문 기준으로 task/note를 다시 만들어라.\n\n`
+    ? `## 모드: 재분석
+사용자가 본문을 수정해서 다시 분석을 요청했다. 이전에 만들었던 task/note는 이미 휴지통으로 옮겨졌으니, 새 본문 기준으로 task/note를 다시 만들어라.
+
+`
     : ''}## 사용자 입력
 ${text || '(첨부만 있고 텍스트 없음)'}
 
