@@ -26,6 +26,8 @@ type HistoryItem = {
   error?: string;
   size?: number;
   mimeType?: string;
+  // Raw-specific: Claude의 응답 (답변/처리 보고)
+  response?: string;
   // Transfer-specific
   transferDirection?: 'sent' | 'received';
   transferMode?: 'transfer' | 'share';
@@ -99,6 +101,7 @@ export async function GET(req: NextRequest) {
         _id: String(r._id),
         title: firstLine.slice(0, 60) || '(빈 내용)',
         content: r.content,
+        response: r.response,
         status: r.status,
         createdAt: toIso(r.createdAt),
         error: r.error,

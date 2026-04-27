@@ -37,6 +37,8 @@ export interface RawInput {
   transferredFrom?: string;
   transferredAt?: Date;
   transferMode?: 'transfer' | 'share';
+  // Claude의 최종 응답 텍스트 (질문에 대한 답변, 처리 결과 보고 등). 스트리밍 종료 후 저장.
+  response?: string;
 }
 
 export type TaskStatus = 'todo' | 'done';

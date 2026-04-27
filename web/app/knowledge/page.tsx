@@ -17,6 +17,7 @@ type Item = {
   error?: string;
   size?: number;
   mimeType?: string;
+  response?: string;
   transferDirection?: 'sent' | 'received';
   transferMode?: 'transfer' | 'share';
   transferPartner?: string;
@@ -488,6 +489,17 @@ function KnowledgeInner() {
                   >
                     {item.content}
                   </pre>
+                )}
+
+                {item.type === 'raw' && item.response && isOpen && (
+                  <div className="mt-2 rounded border border-zinc-200 bg-zinc-50 p-2">
+                    <div className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                      Claude 응답
+                    </div>
+                    <pre className="whitespace-pre-wrap break-words font-sans text-xs text-zinc-700">
+                      {item.response}
+                    </pre>
+                  </div>
                 )}
 
                 {item.error && (
