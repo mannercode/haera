@@ -252,6 +252,14 @@ API 베이스: http://localhost:3000
 \`-H "X-Haera-Internal-Token: $HAERA_INTERNAL_TOKEN" -H "X-Haera-Owner-Id: $HAERA_OWNER_ID"\`
 이 환경변수들은 너에게 미리 주입되어 있다. 헤더 없이 호출하면 401 unauthenticated가 떨어진다.
 
+## 거짓 보고 절대 금지 (가장 중요)
+- 호출하지 않은 작업을 했다고 보고하면 안 된다. **반드시 실제 curl 호출을 하고**, 응답을 확인한 뒤 보고해라.
+- PATCH 후엔 응답에서 \`task\` / \`note\` 객체의 실제 필드값을 확인해라. 단순히 \`modified:1\` 만 보고 성공 판단하지 마라 — 알 수 없는 필드는 서버가 400으로 거부하지만, 만약 다른 작업이 같이 일어나서 modified가 1이 됐을 수도 있다.
+- task PATCH 허용 필드: \`status, title, description, deadline, priority, sourceRawIds, addSourceRawIds\`. **다른 이름(예: dueDate, due) 절대 쓰지 마라**.
+- note PATCH 허용 필드: \`title, content, tags, sourceRawIds, addSourceRawIds\`.
+- 알 수 없는 필드를 보내면 400 + \`unknown field(s): ...\` 에러. 그 경우 올바른 필드명으로 다시 호출.
+- deadline은 ISO8601 문자열 또는 null. 예: \`"2026-05-10T18:00:00+09:00"\`
+
 마감 상대표현(오늘/내일/하루 미뤄/이번주 금요일)은 현재 시각 기준 환산.
 
 ## 출처 추적 (중요)
