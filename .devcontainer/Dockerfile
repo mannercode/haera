@@ -1,7 +1,7 @@
 FROM node:24-slim
 ENV LANG=C.UTF-8
 
-ARG REQUIRED="git curl jq ca-certificates"
+ARG REQUIRED="git curl jq ca-certificates openssh-client"
 ARG DEV_TOOLS="tree tmux iproute2"
 ARG PLANTUML="openjdk-17-jre-headless graphviz fonts-noto-cjk"
 ARG SHELL_FORMATTER="shfmt"

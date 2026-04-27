@@ -1,13 +1,7 @@
 {
     "name": "${containerWorkspaceFolderBasename}",
-    "hostRequirements": {
-        "cpus": 4,
-        "memory": "16gb",
-        "storage": "32gb"
-    },
     "build": {
-        "dockerfile": "Dockerfile",
-        "context": "."
+        "dockerfile": "Dockerfile"
     },
     "features": {
         "ghcr.io/devcontainers/features/docker-in-docker:2": {},
@@ -21,38 +15,30 @@
     ],
     "remoteUser": "node",
     "mounts": [
+        "source=${localEnv:HOME}/.config,target=/home/node/.config,type=bind",
+        "source=${localEnv:HOME}/.ssh,target=/home/node/.ssh,type=bind",
         "source=${localEnv:HOME}/.claude,target=/home/node/.claude,type=bind",
-        "source=${localEnv:HOME}/.claude.json,target=/home/node/.claude.json,type=bind",
-        "source=${localEnv:HOME}/.config,target=/home/node/.config,type=bind"
+        "source=${localEnv:HOME}/.claude.json,target=/home/node/.claude.json,type=bind"
     ],
     "initializeCommand": {
-        "prepare-mounts": "mkdir -p ${localEnv:HOME}/.claude ${localEnv:HOME}/.config",
+        "prepare-mounts": "mkdir -p ${localEnv:HOME}/.claude ${localEnv:HOME}/.config ${localEnv:HOME}/.ssh",
         "prepare-files": "touch ${localEnv:HOME}/.claude.json"
     },
-    "forwardPorts": [
-        5010,
-        5020
-    ],
+    "forwardPorts": [],
     "customizations": {
         "vscode": {
             "extensions": [
                 "dbaeumer.vscode-eslint",
                 "firsttris.vscode-jest-runner",
-                "ms-vscode.live-server",
                 "ms-azuretools.vscode-docker",
                 "ms-azuretools.vscode-containers",
-                "jebbs.plantuml",
                 "esbenp.prettier-vscode",
                 "mutantdino.resourcemonitor",
-                "mkhl.shfmt",
                 "anthropic.claude-code"
             ],
             "settings": {
                 "remote.autoForwardPorts": false,
-                "remote.downloadExtensionsLocally": true,
-                "livePreview.portNumber": 5010,
-                "plantuml.server": "http://localhost:5020/",
-                "plantuml.render": "PlantUMLServer"
+                "remote.downloadExtensionsLocally": true
             }
         }
     }
