@@ -22,7 +22,7 @@ const HomeIcon = () => (
 
 const TABS: { href: string; label: React.ReactNode; ariaLabel?: string }[] = [
   { href: '/', label: <HomeIcon />, ariaLabel: '홈' },
-  { href: '/knowledge', label: '지식창고' },
+  { href: '/knowledge', label: '기록' },
 ];
 
 type Me = { _id: string; email: string; name: string; isAdmin?: boolean };

@@ -56,13 +56,12 @@ function fmtFullDate(d: Date): string {
 }
 
 function buildMonthGrid(year: number, month: number): Date[] {
+  // Always render 6 rows × 7 cols = 42 cells. Months that fit in 5 rows show
+  // an extra trailing week into the next month — keeps calendar height stable.
   const firstOfMonth = new Date(year, month, 1);
   const startOffset = firstOfMonth.getDay();
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const rows = Math.ceil((startOffset + daysInMonth) / 7);
-  const cellCount = rows * 7;
   const gridStart = new Date(year, month, 1 - startOffset);
-  return Array.from({ length: cellCount }, (_, i) => {
+  return Array.from({ length: 42 }, (_, i) => {
     const d = new Date(gridStart);
     d.setDate(gridStart.getDate() + i);
     return d;

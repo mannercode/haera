@@ -211,9 +211,9 @@ function KnowledgeInner() {
   return (
     <main className="mx-auto max-w-6xl space-y-4 px-4 py-6">
       <header>
-        <h1 className="text-2xl font-bold text-zinc-900">지식창고</h1>
+        <h1 className="text-2xl font-bold text-zinc-900">기록</h1>
         <p className="text-sm text-zinc-500">
-          모든 이력 — 참고정보, 입력 원본, 할 일을 통합 검색합니다.
+          모든 항목 — 참고정보, 원본, 할 일, 첨부, 전달기록, 삭제됨까지 통합 검색합니다.
         </p>
       </header>
 
