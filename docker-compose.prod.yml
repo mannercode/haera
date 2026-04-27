@@ -27,6 +27,24 @@ services:
       - ./var:/var/haera
     networks:
       - shared
+    labels:
+      # Watchtower polls ECR and auto-pulls/restarts when a new image is published.
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: haera-watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # ECR credential helper config (created once on the host via ec2-bootstrap).
+      - /home/ec2-user/.docker/config.json:/config.json:ro
+    environment:
+      WATCHTOWER_LABEL_ENABLE: "true"     # only watch containers with the enable label
+      WATCHTOWER_CLEANUP: "true"          # remove old images after update
+      WATCHTOWER_POLL_INTERVAL: "120"     # 2 min — fast enough for personal use
+      WATCHTOWER_INCLUDE_RESTARTING: "true"
+      WATCHTOWER_NOTIFICATION_REPORT: "true"
 
 networks:
   # Shared with the existing nginx/certbot stack so the reverse proxy can
