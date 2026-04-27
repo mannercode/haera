@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { LineagePanel } from './lineage-panel';
 import { TransferButton } from './transfer-button';
+import { SendToOthersButton } from './send-to-others-button';
 
 type RawInput = {
   _id: string;
@@ -11,6 +12,9 @@ type RawInput = {
   createdAt: string;
   processedAt?: string;
   error?: string;
+  transferredFrom?: string;
+  transferredAt?: string;
+  transferMode?: 'transfer' | 'share';
 };
 
 type Task = {
@@ -96,6 +100,14 @@ export default function Home() {
   }, [submitting]);
   const [raws, setRaws] = useState<RawInput[]>([]);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
+  const [inbox, setInbox] = useState<{
+    _id: string;
+    content: string;
+    mode: 'transfer' | 'share';
+    sender: { _id: string; name: string; email: string } | null;
+    transferredAt: string | null;
+  }[]>([]);
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [loginStep, setLoginStep] = useState<'idle' | 'urlReady' | 'submitting'>('idle');
   const [loginUrl, setLoginUrl] = useState('');
@@ -123,14 +135,16 @@ export default function Home() {
   const [openLineage, setOpenLineage] = useState<string | null>(null);
 
   async function refresh() {
-    const [r, t, a] = await Promise.all([
+    const [r, t, a, ib] = await Promise.all([
       fetch('/api/raw').then((r) => r.json()),
       fetch('/api/tasks').then((r) => r.json()),
       fetch('/api/auth/status').then((r) => r.json()),
+      fetch('/api/inbox').then((r) => r.json()),
     ]);
     setRaws(r);
     setAllTasks(t);
     setAuthed(!!a.authenticated);
+    setInbox(ib.items ?? []);
   }
 
   useEffect(() => {
@@ -163,17 +177,24 @@ export default function Home() {
     fetch(`/api/upload/${id}`, { method: 'DELETE' }).catch(() => {});
   }
 
-  async function submit() {
-    if ((!text.trim() && attachments.length === 0) || submitting) return;
+  async function submit(opts?: { content?: string; clearInput?: boolean }) {
+    const explicitContent = opts?.content;
+    const useText = explicitContent ?? text;
+    if (
+      (!useText.trim() && attachments.length === 0) ||
+      submitting
+    ) return;
     setSubmitting(true);
     setSubmitError('');
     setStreamText('');
     setStreamThinking('');
     setStreamTools([]);
-    const sentText = text;
-    const sentAttachments = attachments;
-    setText('');
-    setAttachments([]);
+    const sentText = useText;
+    const sentAttachments = explicitContent ? [] : attachments;
+    if (opts?.clearInput !== false) {
+      if (!explicitContent) setText('');
+      setAttachments([]);
+    }
 
     let res: Response;
     try {
@@ -308,6 +329,24 @@ export default function Home() {
     refresh();
   }
 
+  async function rejectInbox(id: string) {
+    await fetch(`/api/inbox/${id}`, { method: 'DELETE' });
+    refresh();
+  }
+
+  async function acceptInbox(id: string, content: string) {
+    if (acceptingId) return;
+    setAcceptingId(id);
+    try {
+      // Mark accepted first so it leaves the inbox immediately, then process.
+      await fetch(`/api/inbox/${id}`, { method: 'PATCH' });
+      setInbox((cur) => cur.filter((i) => i._id !== id));
+      await submit({ content, clearInput: false });
+    } finally {
+      setAcceptingId(null);
+    }
+  }
+
   const tasksByDay = useMemo(() => {
     const m = new Map<string, Task[]>();
     for (const t of allTasks) {
@@ -338,7 +377,8 @@ export default function Home() {
   }, [popoverKey]);
   const popoverTasks = popoverKey ? tasksByDay.get(popoverKey) ?? [] : [];
 
-  const pending = raws.filter((r) => r.status === 'pending');
+  // "정리 대기" excludes inbox items (those have transferredFrom and are listed separately above).
+  const pending = raws.filter((r) => r.status === 'pending' && !r.transferredFrom);
   const failed = raws.filter((r) => r.status === 'failed');
 
   function gotoMonth(delta: number) {
@@ -383,6 +423,59 @@ export default function Home() {
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-6 space-y-6">
+      {inbox.length > 0 && (
+        <section className="space-y-2 rounded border border-blue-200 bg-blue-50/40 p-3">
+          <h2 className="text-sm font-semibold text-blue-900">
+            받은 항목 ({inbox.length})
+          </h2>
+          <ul className="space-y-2">
+            {inbox.map((it) => {
+              const senderName = it.sender?.name ?? '알 수 없음';
+              const modeLabel = it.mode === 'share' ? '공유' : '전달';
+              const modeCls =
+                it.mode === 'share'
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : 'bg-blue-100 text-blue-800';
+              return (
+                <li
+                  key={it._id}
+                  className="rounded border border-zinc-200 bg-white p-3 text-sm"
+                >
+                  <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
+                    <span className={cls('rounded px-1.5 py-0.5 font-medium', modeCls)}>
+                      {modeLabel}
+                    </span>
+                    <span className="font-medium text-zinc-700">{senderName}</span>
+                    {it.transferredAt && <span>{fmtDateTime(it.transferredAt)}</span>}
+                  </div>
+                  <pre className="whitespace-pre-wrap break-words font-sans text-sm text-zinc-800">
+                    {it.content.length > 500
+                      ? it.content.slice(0, 500) + '...'
+                      : it.content}
+                  </pre>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      disabled={!!acceptingId || submitting}
+                      onClick={() => acceptInbox(it._id, it.content)}
+                      className="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white disabled:opacity-50"
+                    >
+                      {acceptingId === it._id ? '처리 중...' : '수락 (정리)'}
+                    </button>
+                    <button
+                      disabled={!!acceptingId}
+                      onClick={() => rejectInbox(it._id)}
+                      className="rounded border border-zinc-300 bg-white px-3 py-1 text-xs text-zinc-700 hover:bg-zinc-100 disabled:opacity-50"
+                    >
+                      거절
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
       {authed === false && (
         <section className="space-y-3 rounded border border-amber-300 bg-amber-50 p-4 text-sm">
           <div className="font-medium text-amber-800">
@@ -500,11 +593,27 @@ export default function Home() {
           />
           <button
             disabled={submitting || (!text.trim() && attachments.length === 0) || authed === false}
-            onClick={submit}
+            onClick={() => submit()}
             className="rounded bg-blue-600 px-4 text-sm font-medium text-white disabled:opacity-50"
           >
             {submitting ? '처리 중...' : '보내기'}
           </button>
+          <SendToOthersButton
+            text={text}
+            disabled={submitting}
+            onSent={({ mode }) => {
+              const sentText = text;
+              if (mode === 'share') {
+                // Also process locally so sender's workspace gets the same content.
+                submit();
+              } else {
+                setText('');
+                setAttachments([]);
+              }
+              // Suppress unused-var lint
+              void sentText;
+            }}
+          />
         </div>
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <label className="cursor-pointer rounded border border-zinc-300 bg-white px-2 py-1 text-zinc-700 hover:bg-zinc-100">
@@ -908,14 +1017,24 @@ export default function Home() {
                 key={r._id}
                 className="rounded border border-zinc-200 bg-zinc-50 p-3 text-sm"
               >
-                <div className="flex justify-between text-xs text-zinc-500">
+                <div className="flex items-center justify-between text-xs text-zinc-500">
                   <span>{fmtDateTime(r.createdAt)}</span>
-                  <button
-                    onClick={() => deleteRaw(r._id)}
-                    className="hover:text-red-600"
-                  >
-                    삭제
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <TransferButton type="raw" id={r._id} onDone={refresh} />
+                    <button
+                      disabled={!!acceptingId || submitting}
+                      onClick={() => acceptInbox(r._id, r.content)}
+                      className="rounded bg-blue-600 px-2 py-0.5 text-[11px] font-medium text-white disabled:opacity-50"
+                    >
+                      {acceptingId === r._id ? '...' : '지금 정리'}
+                    </button>
+                    <button
+                      onClick={() => deleteRaw(r._id)}
+                      className="hover:text-red-600"
+                    >
+                      삭제
+                    </button>
+                  </div>
                 </div>
                 <pre className="mt-2 whitespace-pre-wrap font-mono text-xs text-zinc-700">
                   {r.content.length > 300 ? r.content.slice(0, 300) + '...' : r.content}

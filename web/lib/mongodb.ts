@@ -36,6 +36,7 @@ export interface RawInput {
   error?: string;
   transferredFrom?: string;
   transferredAt?: Date;
+  transferMode?: 'transfer' | 'share';
 }
 
 export type TaskStatus = 'todo' | 'done';

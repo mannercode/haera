@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 type User = { _id: string; email: string; name: string };
 
@@ -19,6 +20,11 @@ export function TransferButton({
   const [users, setUsers] = useState<User[] | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     if (!open || users) return;
@@ -27,6 +33,15 @@ export function TransferButton({
       .then((d) => setUsers(d.users ?? []))
       .catch(() => setUsers([]));
   }, [open, users]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
 
   async function transfer(toUserId: string) {
     setSubmitting(true);
@@ -49,54 +64,66 @@ export function TransferButton({
   }
 
   return (
-    <div className="relative inline-block">
+    <>
       <button
         onClick={(e) => {
           e.stopPropagation();
-          setOpen((v) => !v);
+          setOpen(true);
         }}
-        className={
-          className ?? 'text-xs text-zinc-400 hover:text-blue-700'
-        }
+        className={className ?? 'text-xs text-zinc-400 hover:text-blue-700'}
         title="다른 사용자에게 전달"
+        aria-label="전달"
       >
         ↪
       </button>
-      {open && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          className="absolute right-0 z-30 mt-1 w-56 rounded border border-zinc-200 bg-white p-2 text-xs shadow-md"
-        >
-          <div className="mb-1 font-medium text-zinc-700">전달 대상 선택</div>
-          {users === null ? (
-            <div className="text-zinc-500">불러오는 중...</div>
-          ) : users.length === 0 ? (
-            <div className="text-zinc-500">전달 가능한 다른 사용자가 없습니다.</div>
-          ) : (
-            <ul className="space-y-1">
-              {users.map((u) => (
-                <li key={u._id}>
-                  <button
-                    disabled={submitting}
-                    onClick={() => transfer(u._id)}
-                    className="block w-full rounded px-2 py-1 text-left hover:bg-blue-50 disabled:opacity-50"
-                  >
-                    {u.name}
-                    <span className="ml-1 text-zinc-400">{u.email}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {error && <div className="mt-1 text-red-700">{error}</div>}
-          <button
-            onClick={() => setOpen(false)}
-            className="mt-2 text-zinc-500 hover:text-zinc-800"
+      {open &&
+        mounted &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-900/30 p-4"
+            onMouseDown={() => setOpen(false)}
           >
-            취소
-          </button>
-        </div>
-      )}
-    </div>
+            <div
+              className="w-full max-w-md rounded-md border border-zinc-300 bg-white p-4 shadow-xl"
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-sm font-semibold">전달 대상 선택</h3>
+                <button
+                  onClick={() => setOpen(false)}
+                  className="text-zinc-400 hover:text-zinc-700"
+                  aria-label="닫기"
+                >
+                  ✕
+                </button>
+              </div>
+              {users === null ? (
+                <p className="text-sm text-zinc-500">불러오는 중...</p>
+              ) : users.length === 0 ? (
+                <p className="text-sm text-zinc-500">전달 가능한 다른 사용자가 없습니다.</p>
+              ) : (
+                <ul className="space-y-1">
+                  {users.map((u) => (
+                    <li key={u._id}>
+                      <button
+                        disabled={submitting}
+                        onClick={() => transfer(u._id)}
+                        className="block w-full rounded border border-zinc-200 bg-white px-3 py-2 text-left text-sm hover:border-blue-300 hover:bg-blue-50 disabled:opacity-50"
+                      >
+                        <span className="font-medium">{u.name}</span>
+                        <span className="ml-2 text-xs text-zinc-500">{u.email}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {error && (
+                <p className="mt-2 text-xs text-red-700">에러: {error}</p>
+              )}
+            </div>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }

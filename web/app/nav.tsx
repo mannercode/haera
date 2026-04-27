@@ -5,8 +5,23 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { BookmarksModal } from './bookmarks-modal';
 
-const TABS = [
-  { href: '/', label: 'haera' },
+const HomeIcon = () => (
+  <svg
+    viewBox="0 0 20 20"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    className="h-4 w-4"
+    aria-hidden
+  >
+    <path d="M3 9.5 10 3l7 6.5V17a1 1 0 0 1-1 1h-3.5v-5.5h-5V18H4a1 1 0 0 1-1-1V9.5Z" />
+  </svg>
+);
+
+const TABS: { href: string; label: React.ReactNode; ariaLabel?: string }[] = [
+  { href: '/', label: <HomeIcon />, ariaLabel: '홈' },
   { href: '/knowledge', label: '지식창고' },
 ];
 
@@ -79,8 +94,9 @@ export function Nav() {
               <Link
                 key={t.href}
                 href={t.href}
+                aria-label={t.ariaLabel}
                 className={
-                  'border-b-2 px-3 py-2 text-sm font-medium transition ' +
+                  'flex items-center border-b-2 px-3 py-2 text-sm font-medium transition ' +
                   (active
                     ? 'border-blue-600 text-blue-700'
                     : 'border-transparent text-zinc-600 hover:text-zinc-900')
