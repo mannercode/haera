@@ -360,6 +360,19 @@ export default function Home() {
     refresh();
   }
 
+  async function setTaskDeadline(id: string, dateStr: string) {
+    if (!dateStr) return;
+    // Default to 18:00 KST on the chosen calendar date.
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const deadline = new Date(y, m - 1, d, 18, 0, 0);
+    await fetch(`/api/tasks/${id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ deadline: deadline.toISOString() }),
+    });
+    refresh();
+  }
+
   async function deleteRaw(id: string) {
     await fetch(`/api/raw/${id}`, { method: 'DELETE' });
     refresh();
@@ -1180,6 +1193,12 @@ export default function Home() {
                       <p className="mt-1 text-xs text-zinc-600">{t.description}</p>
                     )}
                   </div>
+                  <input
+                    type="date"
+                    onChange={(e) => setTaskDeadline(t._id, e.target.value)}
+                    className="shrink-0 rounded border border-zinc-300 bg-white px-2 py-0.5 text-xs text-zinc-700"
+                    title="마감일 설정"
+                  />
                   <button
                     onClick={() => deleteTask(t._id)}
                     className="flex h-5 w-5 shrink-0 items-center justify-center rounded text-zinc-400 hover:bg-red-50 hover:text-red-600"
