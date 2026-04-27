@@ -502,6 +502,27 @@ function KnowledgeInner() {
                   </div>
                 )}
 
+                {item.type === 'raw' && isOpen && (
+                  <div className="mt-2 flex gap-2">
+                    <a
+                      href={`/?reanalyze=${item._id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="rounded border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 hover:bg-amber-100"
+                      title="본문을 입력창에 로드해서 수정 후 재분석"
+                    >
+                      ↻ 재분석
+                    </a>
+                    <a
+                      href={`/?continue=${item._id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[11px] font-medium text-emerald-800 hover:bg-emerald-100"
+                      title="이전 대화에 이어서 추가 답변"
+                    >
+                      ↩ 이어서 답변
+                    </a>
+                  </div>
+                )}
+
                 {item.error && (
                   <p className="mt-1 text-xs text-red-700">{item.error}</p>
                 )}

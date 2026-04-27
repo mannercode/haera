@@ -6,6 +6,21 @@ import { trashDoc } from '@/lib/trash';
 
 export const dynamic = 'force-dynamic';
 
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const owner = await requireOwner(req);
+  if (isAuthResponse(owner)) return owner;
+  const { id } = await params;
+  if (!ObjectId.isValid(id)) {
+    return NextResponse.json({ error: 'invalid id' }, { status: 400 });
+  }
+  const db = await getDb();
+  const doc = await db
+    .collection<RawInput>('raw_inputs')
+    .findOne({ _id: new ObjectId(id) as unknown as string, ownerId: owner });
+  if (!doc) return NextResponse.json({ error: 'not found' }, { status: 404 });
+  return NextResponse.json(doc);
+}
+
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const owner = await requireOwner(req);
   if (isAuthResponse(owner)) return owner;

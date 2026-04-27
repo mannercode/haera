@@ -39,6 +39,8 @@ export interface RawInput {
   transferMode?: 'transfer' | 'share';
   // Claude의 최종 응답 텍스트 (질문에 대한 답변, 처리 결과 보고 등). 스트리밍 종료 후 저장.
   response?: string;
+  // 멀티턴: 이 raw가 어떤 raw의 답변인지. 없으면 thread의 시작점.
+  parentRawId?: string;
 }
 
 export type TaskStatus = 'todo' | 'done';

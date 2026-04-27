@@ -71,7 +71,8 @@ export async function POST(req: NextRequest) {
   let contentSnippet: string | undefined;
 
   if (mode === 'transfer') {
-    // Ownership change in place.
+    // Ownership change in place. raw 전달 시 파생 task/note는 보내지 않음 —
+    // 받는 사람이 필요하면 재분석으로 직접 산출.
     await db
       .collection<Task | Note | RawInput>(coll)
       .updateOne(

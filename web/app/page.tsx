@@ -115,6 +115,33 @@ export default function Home() {
     const id = setInterval(() => setElapsed(Math.floor((Date.now() - start) / 1000)), 500);
     return () => clearInterval(id);
   }, [submitting]);
+
+  // URL params: /?reanalyze=<rawId> or /?continue=<rawId> from knowledge view.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const ra = params.get('reanalyze');
+    const co = params.get('continue');
+    if (ra) {
+      fetch(`/api/raw/${ra}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((raw) => {
+          if (raw?.content !== undefined) {
+            setText(raw.content);
+            setReanalyzeRawId(ra);
+            setLoadedFromRawId(null);
+            setContinueRawId(null);
+          }
+        })
+        .catch(() => {});
+      window.history.replaceState({}, '', '/');
+    } else if (co) {
+      setContinueRawId(co);
+      setReanalyzeRawId(null);
+      setLoadedFromRawId(null);
+      window.history.replaceState({}, '', '/');
+    }
+  }, []);
   const [raws, setRaws] = useState<RawInput[]>([]);
   const [allTasks, setAllTasks] = useState<Task[]>([]);
   const [inbox, setInbox] = useState<{
@@ -128,6 +155,8 @@ export default function Home() {
   // When user loads a pending/failed/inbox raw into the main input for editing,
   // we remember its id so we can delete the source after a successful submit.
   const [loadedFromRawId, setLoadedFromRawId] = useState<string | null>(null);
+  const [reanalyzeRawId, setReanalyzeRawId] = useState<string | null>(null);
+  const [continueRawId, setContinueRawId] = useState<string | null>(null);
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [loginStep, setLoginStep] = useState<'idle' | 'urlReady' | 'submitting'>('idle');
   const [loginUrl, setLoginUrl] = useState('');
@@ -216,6 +245,8 @@ export default function Home() {
       if (!explicitContent) setText('');
       setAttachments([]);
       setLoadedFromRawId(null);
+      setReanalyzeRawId(null);
+      setContinueRawId(null);
     }
 
     let res: Response;
@@ -226,6 +257,8 @@ export default function Home() {
         body: JSON.stringify({
           text: sentText,
           attachmentIds: sentAttachments.map((a) => a._id),
+          reanalyzeRawId: reanalyzeRawId || undefined,
+          continueRawId: continueRawId || undefined,
         }),
       });
     } catch (e) {
@@ -302,7 +335,28 @@ export default function Home() {
   function loadIntoInput(rawId: string, content: string) {
     setText(content);
     setLoadedFromRawId(rawId);
-    // Scroll the textarea into view so user sees the loaded content.
+    setReanalyzeRawId(null);
+    setContinueRawId(null);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+
+  function loadForReanalyze(rawId: string, content: string) {
+    setText(content);
+    setLoadedFromRawId(null);
+    setReanalyzeRawId(rawId);
+    setContinueRawId(null);
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }
+
+  function loadForContinue(rawId: string) {
+    setText('');
+    setLoadedFromRawId(null);
+    setReanalyzeRawId(null);
+    setContinueRawId(rawId);
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -843,6 +897,36 @@ export default function Home() {
                 setLoadedFromRawId(null);
               }}
               className="underline hover:text-blue-900"
+            >
+              취소
+            </button>
+          </div>
+        )}
+        {reanalyzeRawId && (
+          <div className="text-xs text-amber-700">
+            ↻ 재분석 모드 — 분석하기 누르면 이 raw의 본문이 갱신되고 기존 산출물(task/note)은 휴지통으로.{' '}
+            <button
+              type="button"
+              onClick={() => {
+                setText('');
+                setReanalyzeRawId(null);
+              }}
+              className="underline hover:text-amber-900"
+            >
+              취소
+            </button>
+          </div>
+        )}
+        {continueRawId && (
+          <div className="text-xs text-emerald-700">
+            ↩ 이어서 답변 모드 — 이전 대화 컨텍스트와 함께 처리됩니다.{' '}
+            <button
+              type="button"
+              onClick={() => {
+                setText('');
+                setContinueRawId(null);
+              }}
+              className="underline hover:text-emerald-900"
             >
               취소
             </button>
