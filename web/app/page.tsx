@@ -108,6 +108,9 @@ export default function Home() {
     transferredAt: string | null;
   }[]>([]);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  // When user loads a pending/failed/inbox raw into the main input for editing,
+  // we remember its id so we can delete the source after a successful submit.
+  const [loadedFromRawId, setLoadedFromRawId] = useState<string | null>(null);
   const [authed, setAuthed] = useState<boolean | null>(null);
   const [loginStep, setLoginStep] = useState<'idle' | 'urlReady' | 'submitting'>('idle');
   const [loginUrl, setLoginUrl] = useState('');
@@ -191,9 +194,11 @@ export default function Home() {
     setStreamTools([]);
     const sentText = useText;
     const sentAttachments = explicitContent ? [] : attachments;
+    const cleanupRawId = explicitContent ? null : loadedFromRawId;
     if (opts?.clearInput !== false) {
       if (!explicitContent) setText('');
       setAttachments([]);
+      setLoadedFromRawId(null);
     }
 
     let res: Response;
@@ -262,6 +267,11 @@ export default function Home() {
           }
         }
       }
+      // After a successful run, remove the source raw if the input was loaded
+      // from a pending/inbox/failed item.
+      if (cleanupRawId) {
+        await fetch(`/api/raw/${cleanupRawId}`, { method: 'DELETE' }).catch(() => {});
+      }
       refresh();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -269,6 +279,15 @@ export default function Home() {
       setSubmitError(`처리 중 오류: ${msg}`);
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  function loadIntoInput(rawId: string, content: string) {
+    setText(content);
+    setLoadedFromRawId(rawId);
+    // Scroll the textarea into view so user sees the loaded content.
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     }
   }
 
@@ -428,6 +447,9 @@ export default function Home() {
           <h2 className="text-sm font-semibold text-blue-900">
             받은 항목 ({inbox.length})
           </h2>
+          <p className="text-[11px] text-blue-700/80">
+            본문 클릭 → 입력창에 채워짐 (편집 후 보내기). 또는 "수락"으로 즉시 정리.
+          </p>
           <ul className="space-y-2">
             {inbox.map((it) => {
               const senderName = it.sender?.name ?? '알 수 없음';
@@ -436,10 +458,16 @@ export default function Home() {
                 it.mode === 'share'
                   ? 'bg-emerald-100 text-emerald-800'
                   : 'bg-blue-100 text-blue-800';
+              const isLoaded = loadedFromRawId === it._id;
               return (
                 <li
                   key={it._id}
-                  className="rounded border border-zinc-200 bg-white p-3 text-sm"
+                  className={cls(
+                    'rounded border p-3 text-sm transition',
+                    isLoaded
+                      ? 'border-blue-400 bg-blue-50 ring-1 ring-blue-300'
+                      : 'border-zinc-200 bg-white',
+                  )}
                 >
                   <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-zinc-500">
                     <span className={cls('rounded px-1.5 py-0.5 font-medium', modeCls)}>
@@ -447,12 +475,22 @@ export default function Home() {
                     </span>
                     <span className="font-medium text-zinc-700">{senderName}</span>
                     {it.transferredAt && <span>{fmtDateTime(it.transferredAt)}</span>}
+                    {isLoaded && (
+                      <span className="ml-auto text-blue-700">↑ 입력창에 로드됨</span>
+                    )}
                   </div>
-                  <pre className="whitespace-pre-wrap break-words font-sans text-sm text-zinc-800">
-                    {it.content.length > 500
-                      ? it.content.slice(0, 500) + '...'
-                      : it.content}
-                  </pre>
+                  <button
+                    type="button"
+                    onClick={() => loadIntoInput(it._id, it.content)}
+                    className="block w-full cursor-pointer rounded text-left hover:bg-blue-50/60"
+                    title="클릭하면 입력창에 채워집니다"
+                  >
+                    <pre className="whitespace-pre-wrap break-words font-sans text-sm text-zinc-800">
+                      {it.content.length > 500
+                        ? it.content.slice(0, 500) + '...'
+                        : it.content}
+                    </pre>
+                  </button>
                   <div className="mt-2 flex gap-2">
                     <button
                       disabled={!!acceptingId || submitting}
@@ -469,6 +507,120 @@ export default function Home() {
                       거절
                     </button>
                   </div>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {pending.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold text-zinc-600">
+            정리 대기 ({pending.length})
+          </h2>
+          <p className="text-[11px] text-zinc-500">
+            본문 클릭하면 입력창에 채워집니다 — 수정 후 [보내기] 누르면 처리되고 원본은 자동 삭제.
+          </p>
+          <ul className="space-y-2">
+            {pending.map((r) => {
+              const isLoaded = loadedFromRawId === r._id;
+              return (
+                <li
+                  key={r._id}
+                  className={cls(
+                    'rounded border p-3 text-sm transition',
+                    isLoaded
+                      ? 'border-blue-400 bg-blue-50 ring-1 ring-blue-300'
+                      : 'border-zinc-200 bg-zinc-50',
+                  )}
+                >
+                  <div className="flex items-center justify-between text-xs text-zinc-500">
+                    <span>{fmtDateTime(r.createdAt)}</span>
+                    <div className="flex items-center gap-2">
+                      <TransferButton type="raw" id={r._id} onDone={refresh} />
+                      <button
+                        disabled={!!acceptingId || submitting}
+                        onClick={() => acceptInbox(r._id, r.content)}
+                        className="rounded bg-blue-600 px-2 py-0.5 text-[11px] font-medium text-white disabled:opacity-50"
+                      >
+                        {acceptingId === r._id ? '...' : '지금 정리'}
+                      </button>
+                      <button
+                        onClick={() => deleteRaw(r._id)}
+                        className="hover:text-red-600"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </div>
+                  {r.error && (
+                    <p className="mt-1 text-xs text-amber-700">사유: {r.error}</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => loadIntoInput(r._id, r.content)}
+                    className="mt-2 block w-full cursor-pointer rounded text-left hover:bg-blue-50/40"
+                    title="클릭하면 입력창에 채워집니다"
+                  >
+                    <pre className="whitespace-pre-wrap font-mono text-xs text-zinc-700">
+                      {r.content.length > 300 ? r.content.slice(0, 300) + '...' : r.content}
+                    </pre>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      )}
+
+      {failed.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold text-red-700">
+            정리 실패 ({failed.length})
+          </h2>
+          <p className="text-[11px] text-red-700/70">
+            아래 사유 확인 후 본문 클릭 → 입력창에서 수정 → 다시 [보내기]
+          </p>
+          <ul className="space-y-2">
+            {failed.map((r) => {
+              const isLoaded = loadedFromRawId === r._id;
+              return (
+                <li
+                  key={r._id}
+                  className={cls(
+                    'rounded border p-3 text-sm transition',
+                    isLoaded
+                      ? 'border-blue-400 bg-blue-50 ring-1 ring-blue-300'
+                      : 'border-red-300 bg-red-50',
+                  )}
+                >
+                  <div className="flex justify-between text-xs text-zinc-500">
+                    <span>{fmtDateTime(r.createdAt)}</span>
+                    <button
+                      onClick={() => deleteRaw(r._id)}
+                      className="hover:text-red-700"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                  {r.error ? (
+                    <p className="mt-1 rounded bg-red-100 px-2 py-1 text-xs text-red-800">
+                      사유: {r.error}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs text-zinc-500">사유 기록 없음</p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => loadIntoInput(r._id, r.content)}
+                    className="mt-2 block w-full cursor-pointer rounded text-left hover:bg-blue-50/40"
+                    title="클릭하면 입력창에 채워집니다"
+                  >
+                    <pre className="whitespace-pre-wrap font-mono text-xs text-zinc-700">
+                      {r.content.length > 300 ? r.content.slice(0, 300) + '...' : r.content}
+                    </pre>
+                  </button>
                 </li>
               );
             })}
@@ -647,8 +799,20 @@ export default function Home() {
             </span>
           ))}
         </div>
-        {pending.length > 0 && (
-          <div className="text-xs text-zinc-500">정리 대기: {pending.length}건</div>
+        {loadedFromRawId && (
+          <div className="text-xs text-blue-700">
+            대기/실패 항목에서 로드됨 — 보내기 후 원본 자동 삭제됩니다.{' '}
+            <button
+              type="button"
+              onClick={() => {
+                setText('');
+                setLoadedFromRawId(null);
+              }}
+              className="underline hover:text-blue-900"
+            >
+              취소
+            </button>
+          </div>
         )}
         {submitError && (
           <pre className="whitespace-pre-wrap break-words rounded border border-red-300 bg-red-50 p-2 text-xs text-red-700">
@@ -1006,74 +1170,6 @@ export default function Home() {
         </section>
       )}
 
-      {pending.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-zinc-600">
-            정리 대기 ({pending.length})
-          </h2>
-          <ul className="space-y-2">
-            {pending.map((r) => (
-              <li
-                key={r._id}
-                className="rounded border border-zinc-200 bg-zinc-50 p-3 text-sm"
-              >
-                <div className="flex items-center justify-between text-xs text-zinc-500">
-                  <span>{fmtDateTime(r.createdAt)}</span>
-                  <div className="flex items-center gap-2">
-                    <TransferButton type="raw" id={r._id} onDone={refresh} />
-                    <button
-                      disabled={!!acceptingId || submitting}
-                      onClick={() => acceptInbox(r._id, r.content)}
-                      className="rounded bg-blue-600 px-2 py-0.5 text-[11px] font-medium text-white disabled:opacity-50"
-                    >
-                      {acceptingId === r._id ? '...' : '지금 정리'}
-                    </button>
-                    <button
-                      onClick={() => deleteRaw(r._id)}
-                      className="hover:text-red-600"
-                    >
-                      삭제
-                    </button>
-                  </div>
-                </div>
-                <pre className="mt-2 whitespace-pre-wrap font-mono text-xs text-zinc-700">
-                  {r.content.length > 300 ? r.content.slice(0, 300) + '...' : r.content}
-                </pre>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {failed.length > 0 && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold text-red-700">
-            정리 실패 ({failed.length})
-          </h2>
-          <ul className="space-y-2">
-            {failed.map((r) => (
-              <li
-                key={r._id}
-                className="rounded border border-red-300 bg-red-50 p-3 text-sm"
-              >
-                <div className="flex justify-between text-xs text-zinc-500">
-                  <span>{fmtDateTime(r.createdAt)}</span>
-                  <button
-                    onClick={() => deleteRaw(r._id)}
-                    className="hover:text-red-700"
-                  >
-                    삭제
-                  </button>
-                </div>
-                {r.error && <p className="mt-1 text-xs text-red-700">{r.error}</p>}
-                <pre className="mt-2 whitespace-pre-wrap font-mono text-xs text-zinc-700">
-                  {r.content.length > 300 ? r.content.slice(0, 300) + '...' : r.content}
-                </pre>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
     </main>
   );
 }
