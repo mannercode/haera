@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { getDb, Note } from '@/lib/mongodb';
+import { requireOwner, isAuthResponse } from '@/lib/owner';
 
 export const dynamic = 'force-dynamic';
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const owner = await requireOwner(req);
+  if (isAuthResponse(owner)) return owner;
   const { id } = await params;
   if (!ObjectId.isValid(id)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
@@ -39,11 +42,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   const result = await db
     .collection<Note>('notes')
-    .updateOne({ _id: new ObjectId(id) as unknown as string }, ops);
+    .updateOne({ _id: new ObjectId(id) as unknown as string, ownerId: owner }, ops);
   return NextResponse.json({ matched: result.matchedCount, modified: result.modifiedCount });
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const owner = await requireOwner(req);
+  if (isAuthResponse(owner)) return owner;
   const { id } = await params;
   if (!ObjectId.isValid(id)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
@@ -51,6 +56,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const db = await getDb();
   const result = await db
     .collection<Note>('notes')
-    .deleteOne({ _id: new ObjectId(id) as unknown as string });
+    .deleteOne({ _id: new ObjectId(id) as unknown as string, ownerId: owner });
   return NextResponse.json({ deleted: result.deletedCount });
 }

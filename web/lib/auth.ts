@@ -2,7 +2,10 @@ import { spawn, ChildProcessWithoutNullStreams } from 'node:child_process';
 import { writeFile, stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 
-export const TOKEN_FILE = '/var/haera/auth/claude_token';
+// Container default: /var/haera/auth/claude_token (set via bind mount).
+// Local dev (npm run dev outside docker) overrides via HAERA_DATA_DIR env var.
+const HAERA_DATA_DIR = process.env.HAERA_DATA_DIR ?? '/var/haera';
+export const TOKEN_FILE = `${HAERA_DATA_DIR}/auth/claude_token`;
 const SESSION_TTL_MS = 5 * 60 * 1000;
 const URL_TIMEOUT_MS = 30_000;
 const TOKEN_TIMEOUT_MS = 60_000;

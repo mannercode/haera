@@ -7,12 +7,16 @@ import { ObjectId } from 'mongodb';
 import { getDb, Note, Task, Attachment } from '@/lib/mongodb';
 import { getClaudeToken } from '@/lib/claude';
 import { getObjectBuffer, isLegacyLocalPath } from '@/lib/storage';
+import { requireOwner, isAuthResponse } from '@/lib/owner';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 600;
 
 export async function POST(req: NextRequest) {
+  const ownerOrResp = await requireOwner(req);
+  if (isAuthResponse(ownerOrResp)) return ownerOrResp;
+  const owner = ownerOrResp;
   const body = await req.json();
   const text = typeof body?.text === 'string' ? body.text.trim() : '';
   const attachmentIds = Array.isArray(body?.attachmentIds)
@@ -29,17 +33,25 @@ export async function POST(req: NextRequest) {
 
   const db = await getDb();
   const [notes, tasks, attachments] = await Promise.all([
-    db.collection<Note>('notes').find({}).sort({ createdAt: -1 }).limit(300).toArray(),
+    db
+      .collection<Note>('notes')
+      .find({ ownerId: owner })
+      .sort({ createdAt: -1 })
+      .limit(300)
+      .toArray(),
     db
       .collection<Task>('tasks')
-      .find({ status: 'todo' })
+      .find({ ownerId: owner, status: 'todo' })
       .sort({ deadline: 1 })
       .limit(200)
       .toArray(),
     attachmentIds.length > 0
       ? db
           .collection<Attachment>('attachments')
-          .find({ _id: { $in: attachmentIds.map((s) => new ObjectId(s) as unknown as string) } })
+          .find({
+            _id: { $in: attachmentIds.map((s) => new ObjectId(s) as unknown as string) },
+            ownerId: owner,
+          })
           .toArray()
       : Promise.resolve([] as Attachment[]),
   ]);
@@ -116,6 +128,10 @@ API 베이스: http://localhost:3000
 - GET/POST/PATCH/DELETE /api/notes[/<id>]
 - POST /api/raw
 
+**중요**: 모든 curl 요청에 다음 두 헤더를 반드시 포함해야 한다 (사용자 인증):
+\`-H "X-Haera-Internal-Token: $HAERA_INTERNAL_TOKEN" -H "X-Haera-Owner-Id: $HAERA_OWNER_ID"\`
+이 환경변수들은 너에게 미리 주입되어 있다. 헤더 없이 호출하면 401 unauthenticated가 떨어진다.
+
 마감 상대표현(오늘/내일/하루 미뤄/이번주 금요일)은 현재 시각 기준 환산.
 
 ## 출처 추적 (중요)
@@ -174,6 +190,8 @@ ${attachments.length > 0 ? '- 첨부 파일 내용은 Read 도구로 읽어서 �
             CLAUDE_CODE_OAUTH_TOKEN: token,
             TERM: 'dumb',
             NO_COLOR: '1',
+            HAERA_INTERNAL_TOKEN: process.env.HAERA_INTERNAL_TOKEN ?? '',
+            HAERA_OWNER_ID: owner,
           },
         },
       );

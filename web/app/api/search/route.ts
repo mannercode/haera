@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, Note, RawInput, Task, Attachment } from '@/lib/mongodb';
+import { requireOwner, isAuthResponse } from '@/lib/owner';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +25,8 @@ function toIso(v: Date | string | undefined): string {
 }
 
 export async function GET(req: NextRequest) {
+  const owner = await requireOwner(req);
+  if (isAuthResponse(owner)) return owner;
   const sp = req.nextUrl.searchParams;
   const q = sp.get('q')?.trim() ?? '';
   const type = sp.get('type')?.trim() ?? '';
@@ -40,7 +43,7 @@ export async function GET(req: NextRequest) {
   const PER_COLLECTION_CAP = 2000;
 
   if (!type || type === 'note') {
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ownerId: owner };
     if (re) filter.$or = [{ title: re }, { content: re }, { tags: re }];
     if (tag) filter.tags = tag;
     const docs = await db
@@ -62,7 +65,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (!type || type === 'raw') {
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ownerId: owner };
     if (re) filter.content = re;
     const docs = await db
       .collection<RawInput>('raw_inputs')
@@ -85,7 +88,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (!type || type === 'task') {
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ownerId: owner };
     if (re) filter.$or = [{ title: re }, { description: re }];
     const docs = await db
       .collection<Task>('tasks')
@@ -107,7 +110,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (!type || type === 'attachment') {
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { ownerId: owner };
     if (re) filter.filename = re;
     const docs = await db
       .collection<Attachment>('attachments')

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { LineagePanel } from '../lineage-panel';
+import { TransferButton } from '../transfer-button';
 
 type Item = {
   type: 'note' | 'raw' | 'task' | 'attachment';
@@ -307,6 +308,11 @@ function KnowledgeInner() {
                   <span className="text-[10px] text-zinc-400">
                     {fmtDate(item.createdAt)}
                   </span>
+                  {(item.type === 'task' || item.type === 'note' || item.type === 'raw') && (
+                    <span onClick={(e) => e.stopPropagation()}>
+                      <TransferButton type={item.type} id={item._id} onDone={() => load()} />
+                    </span>
+                  )}
                   <button
                     onClick={(e) => {
                       e.stopPropagation();

@@ -26,6 +26,7 @@ export type RawStatus = 'pending' | 'processed' | 'failed';
 
 export interface RawInput {
   _id?: string;
+  ownerId?: string;
   content: string;
   source?: string;
   instructions?: string;
@@ -33,12 +34,15 @@ export interface RawInput {
   status: RawStatus;
   processedAt?: Date;
   error?: string;
+  transferredFrom?: string;
+  transferredAt?: Date;
 }
 
 export type TaskStatus = 'todo' | 'done';
 
 export interface Task {
   _id?: string;
+  ownerId?: string;
   title: string;
   deadline?: Date | null;
   description?: string;
@@ -47,16 +51,21 @@ export interface Task {
   priority?: 'low' | 'normal' | 'high';
   status: TaskStatus;
   createdAt: Date;
+  transferredFrom?: string;
+  transferredAt?: Date;
 }
 
 export interface Note {
   _id?: string;
+  ownerId?: string;
   title: string;
   content: string;
   tags?: string[];
   sourceRawId?: string;        // legacy single source
   sourceRawIds?: string[];     // multiple sources
   createdAt: Date;
+  transferredFrom?: string;
+  transferredAt?: Date;
 }
 
 export function getSourceRawIds(doc: { sourceRawId?: string; sourceRawIds?: string[] }): string[] {
@@ -70,8 +79,9 @@ export function getSourceRawIds(doc: { sourceRawId?: string; sourceRawIds?: stri
 
 export interface Attachment {
   _id?: string;
+  ownerId?: string;
   filename: string;       // original filename (sanitized for display)
-  storagePath: string;    // absolute path on disk inside the container
+  storagePath: string;    // S3 object key (or legacy /var/... path)
   size: number;
   mimeType?: string;
   createdAt: Date;
@@ -81,4 +91,14 @@ export interface BookmarkClick {
   _id: string;            // the URL itself
   count: number;
   lastAt: Date;
+  ownerId?: string;
+}
+
+export interface User {
+  _id?: string;
+  email: string;
+  passwordHash: string;
+  name: string;
+  isAdmin?: boolean;
+  createdAt: Date;
 }

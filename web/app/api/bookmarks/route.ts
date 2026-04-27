@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, Note, BookmarkClick } from '@/lib/mongodb';
+import { requireOwner, isAuthResponse } from '@/lib/owner';
 
 export const dynamic = 'force-dynamic';
 
@@ -55,6 +56,8 @@ type Bookmark = {
 };
 
 export async function GET(req: NextRequest) {
+  const owner = await requireOwner(req);
+  if (isAuthResponse(owner)) return owner;
   const limit = Math.min(
     1000,
     Math.max(1, parseInt(req.nextUrl.searchParams.get('limit') ?? '500', 10) || 500),
@@ -63,14 +66,22 @@ export async function GET(req: NextRequest) {
 
   const notesP = db
     .collection<Note>('notes')
-    .find({ content: { $regex: 'https?://', $options: 'i' } })
+    .find({ ownerId: owner, content: { $regex: 'https?://', $options: 'i' } })
     .sort({ createdAt: -1 })
     .toArray();
-  const clicksP = db.collection<BookmarkClick>('bookmark_clicks').find({}).toArray();
+  const clicksP = db
+    .collection<BookmarkClick>('bookmark_clicks')
+    .find({ ownerId: owner })
+    .toArray();
   const [docs, clickDocs] = await Promise.all([notesP, clicksP]);
 
   const clicksByUrl = new Map<string, BookmarkClick>();
-  for (const c of clickDocs) clicksByUrl.set(c._id, c);
+  for (const c of clickDocs) {
+    // _id is `${ownerId}::${url}`; extract the URL part
+    const idx = c._id.indexOf('::');
+    const url = idx >= 0 ? c._id.slice(idx + 2) : c._id;
+    clicksByUrl.set(url, c);
+  }
 
   const out: Bookmark[] = [];
   const seen = new Set<string>();

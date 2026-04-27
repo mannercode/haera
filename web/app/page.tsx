@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { LineagePanel } from './lineage-panel';
+import { TransferButton } from './transfer-button';
 
 type RawInput = {
   _id: string;
@@ -101,13 +102,23 @@ export default function Home() {
   const [loginSession, setLoginSession] = useState('');
   const [loginCode, setLoginCode] = useState('');
   const [loginError, setLoginError] = useState('');
-  const [viewMonth, setViewMonth] = useState<Date>(() => {
-    const t = new Date();
-    return new Date(t.getFullYear(), t.getMonth(), 1);
-  });
-  const [selectedKey, setSelectedKey] = useState<string>(() => dateKey(new Date()));
+  // Initialize date-dependent state to a stable epoch sentinel on first render,
+  // then bump to "today" on client mount. This keeps server HTML and client hydrate
+  // outputs identical regardless of timezone differences.
+  const [viewMonth, setViewMonth] = useState<Date>(() => new Date(2000, 0, 1));
+  const [selectedKey, setSelectedKey] = useState<string>('2000-01-01');
   const [popoverStack, setPopoverStack] = useState<string[]>([]);
   const popoverKey = popoverStack[popoverStack.length - 1] ?? null;
+  // Avoid SSR/CSR hydration mismatch: any "current time" derived value must
+  // resolve only after mount so the server-rendered HTML matches the first
+  // client paint regardless of timezone differences.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    const t = new Date();
+    setViewMonth(new Date(t.getFullYear(), t.getMonth(), 1));
+    setSelectedKey(dateKey(t));
+    setMounted(true);
+  }, []);
   const [showNoDeadline, setShowNoDeadline] = useState(false);
   const [openLineage, setOpenLineage] = useState<string | null>(null);
 
@@ -317,7 +328,8 @@ export default function Home() {
     [allTasks],
   );
 
-  const todayKey = dateKey(new Date());
+  const todayKey = mounted ? dateKey(new Date()) : '';
+  const nowMs = mounted ? Date.now() : 0;
   const grid = buildMonthGrid(viewMonth.getFullYear(), viewMonth.getMonth());
   const popoverDate = useMemo(() => {
     if (!popoverKey) return null;
@@ -660,7 +672,7 @@ export default function Home() {
                     const overdue =
                       t.status === 'todo' &&
                       t.deadline &&
-                      new Date(t.deadline).getTime() < Date.now();
+                      new Date(t.deadline).getTime() < nowMs;
                     return (
                       <div
                         key={t._id}
@@ -738,7 +750,7 @@ export default function Home() {
                         const overdue =
                           t.status === 'todo' &&
                           t.deadline &&
-                          new Date(t.deadline).getTime() < Date.now();
+                          new Date(t.deadline).getTime() < nowMs;
                         return (
                           <li
                             key={t._id}
@@ -819,12 +831,19 @@ export default function Home() {
                                 />
                               )}
                             </div>
-                            <button
-                              onClick={() => deleteTask(t._id)}
-                              className="self-start text-xs text-zinc-400 hover:text-red-600"
-                            >
-                              ✕
-                            </button>
+                            <div className="flex shrink-0 flex-col items-end gap-1">
+                              <TransferButton
+                                type="task"
+                                id={t._id}
+                                onDone={refresh}
+                              />
+                              <button
+                                onClick={() => deleteTask(t._id)}
+                                className="text-xs text-zinc-400 hover:text-red-600"
+                              >
+                                ✕
+                              </button>
+                            </div>
                           </li>
                         );
                       })}

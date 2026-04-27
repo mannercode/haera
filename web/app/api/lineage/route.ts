@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ObjectId } from 'mongodb';
 import { getDb, Note, RawInput, Task, getSourceRawIds } from '@/lib/mongodb';
+import { requireOwner, isAuthResponse } from '@/lib/owner';
 
 export const dynamic = 'force-dynamic';
 
@@ -34,6 +35,8 @@ function toIso(v: Date | string | undefined | null): string | null {
 }
 
 export async function GET(req: NextRequest) {
+  const owner = await requireOwner(req);
+  if (isAuthResponse(owner)) return owner;
   const sp = req.nextUrl.searchParams;
   const type = sp.get('type') as Kind | null;
   const id = sp.get('id');
@@ -46,11 +49,11 @@ export async function GET(req: NextRequest) {
   let rawIds: string[] = [];
 
   if (type === 'task') {
-    const t = await db.collection<Task>('tasks').findOne({ _id: oid });
+    const t = await db.collection<Task>('tasks').findOne({ _id: oid, ownerId: owner });
     if (!t) return NextResponse.json({ error: 'not found' }, { status: 404 });
     rawIds = getSourceRawIds(t);
   } else if (type === 'note') {
-    const n = await db.collection<Note>('notes').findOne({ _id: oid });
+    const n = await db.collection<Note>('notes').findOne({ _id: oid, ownerId: owner });
     if (!n) return NextResponse.json({ error: 'not found' }, { status: 404 });
     rawIds = getSourceRawIds(n);
   } else if (type === 'raw') {
@@ -63,7 +66,9 @@ export async function GET(req: NextRequest) {
   for (const rid of rawIds) {
     if (!ObjectId.isValid(rid)) continue;
     const rawOid = new ObjectId(rid) as unknown as string;
-    const raw = await db.collection<RawInput>('raw_inputs').findOne({ _id: rawOid });
+    const raw = await db
+      .collection<RawInput>('raw_inputs')
+      .findOne({ _id: rawOid, ownerId: owner });
     if (!raw) continue;
     sources.push({
       _id: String(raw._id),
@@ -72,6 +77,7 @@ export async function GET(req: NextRequest) {
     });
     // Tasks/notes whose sourceRawIds includes this rid OR (legacy) sourceRawId equals it.
     const matchFilter = {
+      ownerId: owner,
       $or: [{ sourceRawIds: rid }, { sourceRawId: rid }],
     } as Record<string, unknown>;
     const [tasks, notes] = await Promise.all([

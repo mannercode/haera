@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, Note } from '@/lib/mongodb';
+import { requireOwner, isAuthResponse } from '@/lib/owner';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  const owner = await requireOwner(req);
+  if (isAuthResponse(owner)) return owner;
   const q = req.nextUrl.searchParams.get('q')?.trim() ?? '';
   const tag = req.nextUrl.searchParams.get('tag')?.trim() ?? '';
   const db = await getDb();
 
-  const filter: Record<string, unknown> = {};
+  const filter: Record<string, unknown> = { ownerId: owner };
   if (q) {
     const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
     filter.$or = [{ title: re }, { content: re }, { tags: re }];
@@ -25,6 +28,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const owner = await requireOwner(req);
+  if (isAuthResponse(owner)) return owner;
   const body = await req.json();
   const title = typeof body?.title === 'string' ? body.title.trim() : '';
   const content = typeof body?.content === 'string' ? body.content.trim() : '';
@@ -43,6 +48,7 @@ export async function POST(req: NextRequest) {
   if (typeof body?.sourceRawId === 'string' && body.sourceRawId) sourceIds.push(body.sourceRawId);
   const dedupSources = Array.from(new Set(sourceIds));
   const doc: Note = {
+    ownerId: owner,
     title,
     content,
     tags,

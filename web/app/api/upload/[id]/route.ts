@@ -3,11 +3,14 @@ import { ObjectId } from 'mongodb';
 import { readFile, unlink } from 'node:fs/promises';
 import { getDb, Attachment } from '@/lib/mongodb';
 import { deleteObject, getObjectBuffer, isLegacyLocalPath } from '@/lib/storage';
+import { requireOwner, isAuthResponse } from '@/lib/owner';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const owner = await requireOwner(req);
+  if (isAuthResponse(owner)) return owner;
   const { id } = await params;
   if (!ObjectId.isValid(id)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
@@ -15,7 +18,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   const db = await getDb();
   const doc = await db
     .collection<Attachment>('attachments')
-    .findOne({ _id: new ObjectId(id) as unknown as string });
+    .findOne({ _id: new ObjectId(id) as unknown as string, ownerId: owner });
   if (!doc) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
   try {
@@ -37,7 +40,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
   }
 }
 
-export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const owner = await requireOwner(req);
+  if (isAuthResponse(owner)) return owner;
   const { id } = await params;
   if (!ObjectId.isValid(id)) {
     return NextResponse.json({ error: 'invalid id' }, { status: 400 });
@@ -45,7 +50,7 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   const db = await getDb();
   const doc = await db
     .collection<Attachment>('attachments')
-    .findOne({ _id: new ObjectId(id) as unknown as string });
+    .findOne({ _id: new ObjectId(id) as unknown as string, ownerId: owner });
   if (!doc) return NextResponse.json({ deleted: 0 });
   try {
     if (isLegacyLocalPath(doc.storagePath)) {
@@ -61,6 +66,6 @@ export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ 
   }
   const res = await db
     .collection<Attachment>('attachments')
-    .deleteOne({ _id: new ObjectId(id) as unknown as string });
+    .deleteOne({ _id: new ObjectId(id) as unknown as string, ownerId: owner });
   return NextResponse.json({ deleted: res.deletedCount });
 }

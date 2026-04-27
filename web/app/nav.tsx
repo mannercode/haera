@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { BookmarksModal } from './bookmarks-modal';
 
@@ -10,28 +10,56 @@ const TABS = [
   { href: '/knowledge', label: '지식창고' },
 ];
 
+type Me = { _id: string; email: string; name: string; isAdmin?: boolean };
+
 export function Nav() {
   const pathname = usePathname();
+  const router = useRouter();
   const [authed, setAuthed] = useState<boolean | null>(null);
+  const [me, setMe] = useState<Me | null>(null);
   const [bookmarksOpen, setBookmarksOpen] = useState(false);
+
+  // Hide entirely on the auth pages.
+  const isAuthPage = pathname === '/login' || pathname === '/signup';
 
   useEffect(() => {
     let cancelled = false;
     async function check() {
       try {
-        const r = await fetch('/api/auth/status').then((r) => r.json());
-        if (!cancelled) setAuthed(!!r.authenticated);
+        const [authRes, meRes] = await Promise.all([
+          fetch('/api/auth/status').then((r) => r.json()),
+          fetch('/api/users/me').then((r) => r.json()),
+        ]);
+        if (cancelled) return;
+        setAuthed(!!authRes.authenticated);
+        setMe(meRes.user ?? null);
       } catch {
-        if (!cancelled) setAuthed(false);
+        if (cancelled) return;
+        setAuthed(false);
+        setMe(null);
       }
     }
-    check();
-    const id = setInterval(check, 10000);
+    if (!isAuthPage) {
+      check();
+      const id = setInterval(check, 10000);
+      return () => {
+        cancelled = true;
+        clearInterval(id);
+      };
+    }
     return () => {
       cancelled = true;
-      clearInterval(id);
     };
-  }, []);
+  }, [isAuthPage]);
+
+  async function logout() {
+    await fetch('/api/users/logout', { method: 'POST' });
+    setMe(null);
+    router.push('/login');
+    router.refresh();
+  }
+
+  if (isAuthPage) return null;
 
   return (
     <>
@@ -74,6 +102,17 @@ export function Nav() {
           >
             {authed === null ? '...' : authed ? '● Claude 인증됨' : '● Claude 인증 필요'}
           </span>
+          {me && (
+            <>
+              <span className="ml-3 text-xs text-zinc-500">{me.name}</span>
+              <button
+                onClick={logout}
+                className="ml-2 text-xs text-zinc-500 hover:text-red-600"
+              >
+                로그아웃
+              </button>
+            </>
+          )}
         </div>
       </nav>
       <BookmarksModal open={bookmarksOpen} onClose={() => setBookmarksOpen(false)} />

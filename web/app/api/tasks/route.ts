@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDb, Task, TaskStatus } from '@/lib/mongodb';
+import { requireOwner, isAuthResponse } from '@/lib/owner';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
+  const owner = await requireOwner(req);
+  if (isAuthResponse(owner)) return owner;
   const status = (req.nextUrl.searchParams.get('status') as TaskStatus | null) ?? undefined;
   const db = await getDb();
-  const filter = status ? { status } : {};
+  const filter: Record<string, unknown> = { ownerId: owner };
+  if (status) filter.status = status;
   const docs = await db
     .collection<Task>('tasks')
     .find(filter)
@@ -17,6 +21,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const owner = await requireOwner(req);
+  if (isAuthResponse(owner)) return owner;
   const body = await req.json();
   const title = typeof body?.title === 'string' ? body.title.trim() : '';
   if (!title) {
@@ -30,6 +36,7 @@ export async function POST(req: NextRequest) {
   if (typeof body?.sourceRawId === 'string' && body.sourceRawId) sourceIds.push(body.sourceRawId);
   const dedupSources = Array.from(new Set(sourceIds));
   const doc: Task = {
+    ownerId: owner,
     title,
     deadline: deadline && !isNaN(deadline.getTime()) ? deadline : null,
     description: typeof body?.description === 'string' ? body.description : undefined,
